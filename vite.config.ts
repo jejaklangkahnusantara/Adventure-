@@ -4,15 +4,15 @@ import react from '@vitejs/plugin-react';
 import process from 'node:process';
 
 export default defineConfig(({ mode }) => {
-  // Memuat variabel lingkungan dari sistem (Netlify) dan file .env.
-  // Parameter ketiga '' memungkinkan pengambilan variabel tanpa prefix VITE_.
-  // Fix: Explicitly import process from node:process to resolve 'Property cwd does not exist on type Process' error.
+  // Memuat variabel lingkungan dari direktori kerja saat ini.
+  // Argumen ketiga '' memungkinkan pemuatan variabel tanpa awalan VITE_.
   const env = loadEnv(mode, process.cwd(), '');
   
   return {
     plugins: [react()],
     define: {
-      // Menyediakan process.env.API_KEY agar tersedia di dalam kode aplikasi (Gemini SDK).
+      // Menentukan process.env.API_KEY untuk kompatibilitas dengan panggilan layanan Gemini yang ada.
+      // Ini memastikan bahwa kode sisi klien dapat mengakses variabel lingkungan Netlify.
       'process.env.API_KEY': JSON.stringify(env.API_KEY || process.env.API_KEY)
     },
     build: {
