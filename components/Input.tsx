@@ -5,49 +5,24 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement | HTMLTe
   label: string;
   isTextArea?: boolean;
   error?: string;
-  action?: React.ReactNode;
 }
 
-const Input: React.FC<InputProps> = ({ label, isTextArea, error, action, ...props }) => {
-  const baseClasses = `w-full px-4 md:px-5 py-3 md:py-3.5 border rounded-2xl outline-none transition-all bg-stone-50 dark:bg-blue-800/50 text-stone-800 dark:text-blue-50 placeholder:text-stone-300 dark:placeholder:text-blue-400/30 font-medium text-sm ${
+const Input: React.FC<InputProps> = ({ label, isTextArea, error, ...props }) => {
+  const baseClasses = `w-full px-4 py-3 bg-stone-50 dark:bg-stone-800/50 border-2 rounded-xl outline-none transition-all text-sm font-bold ${
     error 
-      ? "border-red-500 focus:ring-2 focus:ring-red-500/20" 
-      : "border-stone-200 dark:border-blue-700 focus:ring-2 focus:ring-red-500 dark:focus:ring-blue-500/30 focus:border-red-500 dark:focus:border-blue-500"
+      ? "border-red-500/50" 
+      : "border-stone-100 dark:border-stone-800 focus:border-red-600 dark:focus:border-red-600"
   }`;
 
-  const remaining = props.maxLength && typeof props.value === 'string' 
-    ? props.maxLength - props.value.length 
-    : null;
-  
   return (
-    <div className="flex flex-col gap-1.5 w-full" data-error={!!error}>
-      <div className="flex justify-between items-end px-1">
-        <div className="flex items-center gap-3">
-          <label className="text-[11px] font-black text-stone-500 dark:text-blue-300 uppercase tracking-widest">{label}</label>
-          {action}
-        </div>
-        {remaining !== null && (
-          <span className={`text-[9px] font-black uppercase tracking-tighter ${remaining <= 10 ? 'text-red-500 animate-pulse' : 'text-stone-400 dark:text-blue-400'}`}>
-            Sisa: {remaining}
-          </span>
-        )}
-      </div>
+    <div className="flex flex-col gap-1.5 w-full">
+      <label className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-1">{label}</label>
       {isTextArea ? (
-        <textarea 
-          {...(props as React.TextareaHTMLAttributes<HTMLTextAreaElement>)} 
-          className={`${baseClasses} min-h-[100px] resize-none leading-relaxed`}
-        />
+        <textarea {...(props as any)} className={`${baseClasses} min-h-[100px]`} />
       ) : (
-        <input 
-          {...props} 
-          className={baseClasses}
-        />
+        <input {...props} className={baseClasses} />
       )}
-      {error && (
-        <span className="text-[10px] font-bold text-red-500 dark:text-red-400 uppercase tracking-tight px-1 animate-in fade-in slide-in-from-top-1 duration-200">
-          {error}
-        </span>
-      )}
+      {error && <span className="text-[9px] font-bold text-red-500 uppercase tracking-widest px-1">{error}</span>}
     </div>
   );
 };
