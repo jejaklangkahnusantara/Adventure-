@@ -40,7 +40,13 @@ const defaultSettings: AdminSettings = {
   },
   enableAiSummary: false,
   formConfig: {
-    mountains: ["Gunung Semeru", "Gunung Rinjani", "Gunung Prau", "Gunung Seminung", "Gunung Pesagi", "Gunung Kerinci", "Gunung Merbabu", "Gunung Gede", "Gunung Lawu"],
+    mountains: [
+      "Gunung Semeru", "Gunung Rinjani", "Gunung Prau", "Gunung Seminung", 
+      "Gunung Pesagi", "Gunung Kerinci", "Gunung Merbabu", "Gunung Gede", 
+      "Gunung Lawu", "Gunung Slamet", "Gunung Sumbing", "Gunung Sindoro", 
+      "Gunung Dempo", "Gunung Tanggamus", "Gunung Pesawaran", "Gunung Ratai", 
+      "Gunung Kembang"
+    ],
     tripTypes: ["Private Trip", "Open Trip", "Share Cost"],
     packageCategories: ["REGULER", "Paket A", "Paket B"]
   },
@@ -64,6 +70,8 @@ const TooltipWrapper: React.FC<{ children: React.ReactNode; text: string }> = ({
 const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onSettingsUpdate, onLogout, onClearAll, isDarkMode }) => {
   const [activeSubTab, setActiveTab] = useState<'overview' | 'table' | 'settings'>('overview');
   const [search, setSearch] = useState('');
+  const [dateStart, setDateStart] = useState('');
+  const [dateEnd, setDateEnd] = useState('');
   const [settings, setSettings] = useState<AdminSettings>(defaultSettings);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [showScriptModal, setShowScriptModal] = useState(false);
@@ -227,9 +235,15 @@ function doPost(e) {
   const filteredData = useMemo(() => {
     return data.filter(item => {
       const matchSearch = !search || item.fullName.toLowerCase().includes(search.toLowerCase()) || item.whatsapp.includes(search);
-      return matchSearch;
+      
+      // Date range filtering
+      let matchDate = true;
+      if (dateStart && item.startDate < dateStart) matchDate = false;
+      if (dateEnd && item.startDate > dateEnd) matchDate = false;
+
+      return matchSearch && matchDate;
     });
-  }, [data, search]);
+  }, [data, search, dateStart, dateEnd]);
 
   const isConfigured = !!settings.googleScriptUrl;
 
@@ -422,31 +436,56 @@ function doPost(e) {
 
       {activeSubTab === 'table' && (
         <div className="bg-white dark:bg-stone-900 rounded-[2.5rem] border border-stone-200 dark:border-stone-800 shadow-xl overflow-hidden transition-colors">
-           <div className="p-6 border-b border-stone-50 dark:border-stone-800 flex flex-col md:flex-row items-center gap-4 bg-stone-50/50 dark:bg-stone-800/30">
-             <div className="relative flex-1 w-full">
-                <input type="text" placeholder="Cari nama..." value={search} onChange={e => setSearch(e.target.value)} className="w-full px-6 py-4 bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700 rounded-2xl text-xs font-bold outline-none transition-all dark:text-white" />
+           <div className="p-6 border-b border-stone-50 dark:border-stone-800 flex flex-col gap-6 bg-stone-50/50 dark:bg-stone-800/30">
+             
+             {/* Filter & Search Controls */}
+             <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+               <div className="md:col-span-5 relative">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-stone-400 block mb-1.5 ml-1">Cari Nama / WhatsApp</span>
+                  <input type="text" placeholder="Ketik nama peserta..." value={search} onChange={e => setSearch(e.target.value)} className="w-full px-5 py-3.5 bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700 rounded-xl text-xs font-bold outline-none transition-all dark:text-white focus:ring-2 focus:ring-red-500/20" />
+               </div>
+               
+               <div className="md:col-span-3">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-stone-400 block mb-1.5 ml-1">Dari Tanggal</span>
+                  <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)} className="w-full px-5 py-3.5 bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700 rounded-xl text-xs font-bold outline-none transition-all dark:text-white focus:ring-2 focus:ring-red-500/20" />
+               </div>
+
+               <div className="md:col-span-3">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-stone-400 block mb-1.5 ml-1">Sampai Tanggal</span>
+                  <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)} className="w-full px-5 py-3.5 bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700 rounded-xl text-xs font-bold outline-none transition-all dark:text-white focus:ring-2 focus:ring-red-500/20" />
+               </div>
+
+               <div className="md:col-span-1 flex items-end">
+                  <button onClick={() => { setDateStart(''); setDateEnd(''); setSearch(''); }} className="w-full h-[46px] flex items-center justify-center bg-stone-100 dark:bg-stone-700 rounded-xl hover:bg-stone-200 transition-all">
+                    <svg className="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+               </div>
              </div>
-             <div className="flex gap-3 w-full md:w-auto">
-               <button onClick={() => { const ws = XLSX.utils.json_to_sheet(data); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Participants"); XLSX.writeFile(wb, "Data_Peserta.xlsx"); }} className="flex-1 px-6 py-4 bg-stone-900 dark:bg-stone-800 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl hover:scale-105 transition-all">Export Excel</button>
-               <button onClick={onClearAll} className="px-6 py-4 bg-red-600/10 hover:bg-red-600 text-red-600 hover:text-white border border-red-600/20 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2">
-                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                 Reset
-               </button>
+
+             <div className="flex justify-between items-center pt-2">
+               <div className="text-[9px] font-black uppercase text-stone-400 tracking-widest">
+                 Menampilkan {filteredData.length} dari {data.length} pendaftar
+               </div>
+               <div className="flex gap-3">
+                 <button onClick={() => { const ws = XLSX.utils.json_to_sheet(filteredData); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Filtered_Participants"); XLSX.writeFile(wb, "Data_Peserta_Filtered.xlsx"); }} className="px-5 py-2.5 bg-stone-900 dark:bg-stone-800 text-white text-[9px] font-black uppercase tracking-widest rounded-xl hover:scale-105 transition-all">Export Filtered</button>
+                 <button onClick={onClearAll} className="px-5 py-2.5 bg-red-600/10 hover:bg-red-600 text-red-600 hover:text-white border border-red-600/20 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2">Reset Database</button>
+               </div>
              </div>
            </div>
+           
            <div className="overflow-x-auto no-scrollbar">
              <table className="w-full text-left border-collapse">
                <thead>
                  <tr className="bg-stone-50/50 dark:bg-stone-950/50 border-b border-stone-100 dark:border-stone-800">
-                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">ID & Waktu</th>
+                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">ID & Waktu Reg</th>
                     <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Peserta</th>
-                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Tujuan</th>
+                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Tujuan & Tgl Trip</th>
                     <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Status</th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-stone-50 dark:divide-stone-800">
                  {filteredData.length === 0 ? (
-                   <tr><td colSpan={4} className="px-8 py-20 text-center text-[10px] font-black uppercase tracking-[0.4em] text-stone-300 dark:text-stone-500/20">Data Kosong</td></tr>
+                   <tr><td colSpan={4} className="px-8 py-20 text-center text-[10px] font-black uppercase tracking-[0.4em] text-stone-300 dark:text-stone-500/20">Tidak ada data yang cocok</td></tr>
                  ) : filteredData.map(reg => (
                    <tr key={reg.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
                      <td className="px-8 py-6">
@@ -464,7 +503,7 @@ function doPost(e) {
                      <td className="px-8 py-6">
                         <div className="flex flex-col">
                           <span className="text-xs font-black uppercase text-red-700 dark:text-red-400 tracking-tight">{reg.mountain}</span>
-                          <span className="text-[10px] font-bold text-stone-400 dark:text-stone-500/60 mt-1">{reg.tripType}</span>
+                          <span className="text-[9px] font-black text-stone-400 uppercase mt-1 tracking-widest">{reg.startDate} — {reg.tripType}</span>
                         </div>
                      </td>
                      <td className="px-8 py-6">
