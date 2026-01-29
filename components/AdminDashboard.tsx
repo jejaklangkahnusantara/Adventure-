@@ -38,7 +38,7 @@ const defaultSettings: AdminSettings = {
       "Dibatalkan": true
     }
   },
-  enableAiSummary: true,
+  enableAiSummary: false,
   formConfig: {
     mountains: ["Gunung Semeru", "Gunung Rinjani", "Gunung Prau", "Gunung Seminung", "Gunung Pesagi", "Gunung Kerinci", "Gunung Merbabu", "Gunung Gede", "Gunung Lawu"],
     tripTypes: ["Private Trip", "Open Trip", "Share Cost"],

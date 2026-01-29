@@ -107,6 +107,7 @@ const App: React.FC = () => {
     if (!data.whatsapp) newErrors.whatsapp = "Wajib diisi";
     if (!data.mountain) newErrors.mountain = "Pilih tujuan";
     if (!data.startDate) newErrors.startDate = "Wajib diisi";
+    if (!data.tripType) newErrors.tripType = "Pilih tipe trip";
     
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) {
@@ -262,7 +263,11 @@ const App: React.FC = () => {
                     </div>
 
                     <div className="pt-4">
-                      <RadioGroup label="Kategori Paket" options={formConfig.packageCategories} value={data.packageCategory} onChange={(v) => setData(p => ({ ...p, packageCategory: v }))} />
+                      <RadioGroup label="Tipe Trip" options={formConfig.tripTypes} value={data.tripType} onChange={(v) => setData(p => ({ ...p, tripType: v }))} />
+                    </div>
+
+                    <div className="pt-4">
+                      <RadioGroup label="Pilih Paket Layanan" options={formConfig.packageCategories} value={data.packageCategory} onChange={(v) => setData(p => ({ ...p, packageCategory: v }))} />
                     </div>
                   </div>
                 </div>
