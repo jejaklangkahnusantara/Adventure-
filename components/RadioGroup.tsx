@@ -25,11 +25,11 @@ const RadioGroup: React.FC<RadioGroupProps> = ({
   return (
     <div className={`flex flex-col gap-3 ${className}`} role="radiogroup" aria-labelledby={labelId}>
       <div className="px-1 flex justify-between items-center">
-        <label id={labelId} className="text-[10px] font-black text-stone-400 dark:text-stone-500 uppercase tracking-[0.2em]">
+        <label id={labelId} className="text-[10px] font-black text-stone-400 dark:text-blue-300/40 uppercase tracking-[0.2em]">
           {label}
         </label>
         {value && (
-          <span className="text-[8px] font-black text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded uppercase animate-in fade-in zoom-in">
+          <span className="text-[8px] font-black text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded uppercase animate-in fade-in zoom-in">
             Terpilih
           </span>
         )}
@@ -46,8 +46,8 @@ const RadioGroup: React.FC<RadioGroupProps> = ({
               onClick={() => onChange(option)}
               className={`group relative py-3 px-3 flex flex-col items-center justify-center gap-1.5 transition-all rounded-2xl border-2 text-center ${
                 isActive 
-                  ? 'bg-white dark:bg-stone-800 border-red-600 dark:border-red-500 shadow-lg shadow-red-900/5 ring-4 ring-red-600/5 dark:ring-red-500/10' 
-                  : 'bg-stone-50 dark:bg-stone-800/50 border-transparent text-stone-500 dark:text-stone-400 hover:bg-stone-100/80 dark:hover:bg-stone-800 hover:border-stone-200 dark:hover:border-stone-700'
+                  ? 'bg-white dark:bg-blue-800 border-red-600 dark:border-red-500 shadow-lg shadow-red-900/5 ring-4 ring-red-600/5 dark:ring-red-500/10' 
+                  : 'bg-stone-50 dark:bg-blue-800/30 border-transparent text-stone-500 dark:text-blue-300/60 hover:bg-stone-100/80 dark:hover:bg-blue-800 hover:border-stone-200 dark:hover:border-blue-700'
               }`}
             >
               <span className={`text-[10px] uppercase tracking-wider transition-all leading-tight ${isActive ? 'font-black text-red-700 dark:text-red-400' : 'font-bold'}`}>
