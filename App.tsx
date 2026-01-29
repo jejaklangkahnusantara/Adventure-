@@ -58,7 +58,6 @@ const App: React.FC = () => {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [formConfig, setFormConfig] = useState<FormConfig>(defaultFormConfig);
   const [adminPassInput, setAdminPassInput] = useState('');
-  const [adminLoginError, setAdminLoginError] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDarkMode);
@@ -131,6 +130,13 @@ const App: React.FC = () => {
     localStorage.setItem(DB_KEY, JSON.stringify(updated));
   };
 
+  const handleClearAllRegistrations = () => {
+    if (window.confirm("Hapus semua data pendaftaran dari penyimpanan lokal?")) {
+      setRegistrations([]);
+      localStorage.removeItem(DB_KEY);
+    }
+  };
+
   const handleSubmit = async () => {
     setIsSending(true);
     setSubmitError(null);
@@ -146,10 +152,7 @@ const App: React.FC = () => {
         status: 'Menunggu Verifikasi'
       };
 
-      const updatedRegs = [...registrations, newReg];
-      setRegistrations(updatedRegs);
-      localStorage.setItem(DB_KEY, JSON.stringify(updatedRegs));
-
+      // 1. Kirim ke Google Script jika URL dikonfigurasi
       if (settings?.googleScriptUrl) {
         await fetch(settings.googleScriptUrl.trim(), {
           method: 'POST',
@@ -164,10 +167,23 @@ const App: React.FC = () => {
         });
       }
 
+      // 2. LOGIKA PEMBERSIHAN OTOMATIS: 
+      // Hapus data pendaftaran dari localStorage agar tidak menumpuk di perangkat.
+      // Kita tetap menyisakan pendaftaran saat ini di state 'registrations' 
+      // agar user bisa melihat tiketnya di tab Preview sebelum refresh/keluar.
+      localStorage.removeItem(DB_KEY);
+      
+      // Kosongkan riwayat lama di UI, hanya sisakan tiket yang baru dibuat
+      setRegistrations([newReg]);
+
       setIsModalOpen(false);
       setData(initialData);
       setAdvice('');
       setActiveTab('preview');
+      
+      // Notifikasi opsional bahwa data telah diamankan
+      console.log("Pendaftaran Berhasil & Data Lokal Dibersihkan untuk Keamanan.");
+
     } catch (err) {
       setSubmitError('Terjadi gangguan jaringan.');
     } finally {
@@ -260,9 +276,18 @@ const App: React.FC = () => {
         {activeTab === 'preview' && (
           <div className="max-w-xl mx-auto animate-in fade-in duration-500">
             {registrations.length === 0 ? (
-              <div className="text-center py-20 opacity-50">Belum ada riwayat pendaftaran.</div>
+              <div className="text-center py-20">
+                 <p className="opacity-50 text-xs font-bold uppercase tracking-widest">Belum ada riwayat pendaftaran.</p>
+                 <button onClick={() => setActiveTab('edit')} className="mt-4 text-[10px] font-black text-red-600 underline uppercase tracking-widest">Kembali Ke Formulir</button>
+              </div>
             ) : (
               <div className="space-y-8">
+                <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30 p-4 rounded-2xl mb-8">
+                   <p className="text-[9px] font-black text-amber-700 dark:text-amber-500 uppercase text-center leading-relaxed">
+                     ⚠️ Demi keamanan privasi, data lokal akan terhapus saat Anda meninggalkan halaman ini. 
+                     Silakan unduh E-Ticket Anda sekarang.
+                   </p>
+                </div>
                 {registrations.slice().reverse().map(reg => (
                   <ETicketCard key={reg.id} registration={reg} />
                 ))}
@@ -279,6 +304,7 @@ const App: React.FC = () => {
               isDarkMode={isDarkMode} 
               onSettingsUpdate={(s) => setFormConfig(s.formConfig)}
               onUpdateStatus={handleUpdateStatus}
+              onClearAll={handleClearAllRegistrations}
             />
           ) : (
             <div className="max-w-xs mx-auto bg-white dark:bg-stone-900 p-8 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-6 text-center shadow-2xl">
