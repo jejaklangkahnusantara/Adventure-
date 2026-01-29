@@ -82,6 +82,7 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onUpda
   const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
   const [syncingId, setSyncingId] = useState<number | null>(null);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
 
   useEffect(() => {
     const saved = localStorage.getItem(SETTINGS_KEY);
@@ -145,18 +146,23 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onUpda
   const handleSyncAll = async () => {
     if (!settings.googleScriptUrl) return alert("URL Cloud belum diatur!");
     setIsSyncingAll(true);
+    setSyncProgress(0);
     const unsynced = data.filter(r => !r.isSynced);
     
     let updatedData = [...data];
+    let count = 0;
     for (const reg of unsynced) {
       const success = await syncToCloud(reg);
       if (success) {
         updatedData = updatedData.map(r => r.id === reg.id ? { ...r, isSynced: true } : r);
       }
+      count++;
+      setSyncProgress(Math.round((count / unsynced.length) * 100));
     }
     
     onUpdateRegistrations?.(updatedData);
     setIsSyncingAll(false);
+    setTimeout(() => setSyncProgress(0), 1000);
     alert("Proses sinkronisasi selesai.");
   };
 
@@ -184,25 +190,6 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onUpda
       setTimeout(() => setTestStatus('idle'), 4000);
     }
   };
-
-  const chartData = useMemo(() => {
-    const mountainCounts: Record<string, number> = {};
-    const allMountains = settings.formConfig.mountains;
-    allMountains.forEach(m => { mountainCounts[m] = 0; });
-    data.forEach(reg => {
-      if (mountainCounts[reg.mountain] !== undefined) {
-        mountainCounts[reg.mountain]++;
-      } else {
-        mountainCounts[reg.mountain] = 1;
-      }
-    });
-    return Object.entries(mountainCounts)
-      .map(([name, count]) => ({ 
-        name: name.replace('Gunung ', ''), 
-        count 
-      }))
-      .sort((a, b) => b.count - a.count);
-  }, [data, settings.formConfig.mountains]);
 
   const stats = useMemo(() => {
     return { total: data.length, unsynced: data.filter(r => !r.isSynced).length };
@@ -293,15 +280,22 @@ function doPost(e) {
             <p className="text-[9px] text-stone-400 dark:text-stone-500 font-bold uppercase tracking-tighter">Status Cloud: <span className={!!settings.googleScriptUrl ? 'text-green-600' : 'text-red-500'}>{!!settings.googleScriptUrl ? 'Tersambung' : 'Terputus'}</span></p>
           </div>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-4 items-center">
           {stats.unsynced > 0 && (
-            <button 
-              onClick={handleSyncAll} 
-              disabled={isSyncingAll || !settings.googleScriptUrl}
-              className="px-5 py-2.5 bg-accent text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-accent/20 animate-pulse hover:animate-none flex items-center gap-2"
-            >
-              {isSyncingAll ? 'Sinkronisasi...' : `Sinkron ${stats.unsynced} Data`}
-            </button>
+            <div className="flex flex-col items-end gap-1.5">
+               <button 
+                onClick={handleSyncAll} 
+                disabled={isSyncingAll || !settings.googleScriptUrl}
+                className="px-5 py-2.5 bg-accent text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-accent/20 hover:scale-105 active:scale-95 flex items-center gap-2"
+              >
+                {isSyncingAll ? 'Sinkronisasi...' : `Sinkron ${stats.unsynced} Data`}
+              </button>
+              {isSyncingAll && (
+                <div className="w-full h-1 bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-accent transition-all duration-300" style={{ width: `${syncProgress}%` }}></div>
+                </div>
+              )}
+            </div>
           )}
           <TooltipWrapper text="Keluar dari Sesi Admin">
             <button onClick={onLogout} className="px-5 py-2.5 bg-stone-50 dark:bg-stone-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-stone-500 dark:text-stone-400 hover:text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Keluar</button>
@@ -357,34 +351,43 @@ function doPost(e) {
                  {filteredData.length === 0 ? (
                    <tr><td colSpan={4} className="px-8 py-20 text-center text-[10px] font-black uppercase tracking-[0.4em] text-stone-300 dark:text-stone-500/20">Tidak ada data</td></tr>
                  ) : filteredData.map(reg => (
-                   <tr key={reg.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
+                   <tr key={reg.id} className={`hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors relative border-l-4 ${reg.isSynced ? 'border-l-transparent' : 'border-l-amber-500 bg-amber-500/[0.03]'}`}>
                      <td className="px-8 py-6">
                         <div className="flex items-center gap-4">
                           <div className="flex flex-col">
                             <span className="text-[10px] font-black text-stone-400 dark:text-stone-500/40 uppercase tracking-tighter">#{reg.id.toString().slice(-6)}</span>
                             <span className="text-[9px] font-bold text-stone-300 dark:text-stone-500/30 mt-1">{reg.timestamp}</span>
                           </div>
-                          {reg.isSynced ? (
-                             <TooltipWrapper text="Sudah Sinkron">
-                               <div className="w-8 h-8 bg-green-500/10 text-green-500 rounded-lg flex items-center justify-center">
-                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V11h2.5a2.5 2.5 0 100-5h-.027a1 1 0 01-.952-.683 2 2 0 10-3.725 0 1 1 0 01-.952.683H7.5a1.5 1.5 0 100 3H9v2H7.5a3.5 3.5 0 01-2-6.5V13z" /><path d="M10 13l-3-3h2V3h2v7h2l-3 3z" /></svg>
+                          <div className="flex items-center gap-2">
+                            {reg.isSynced ? (
+                               <TooltipWrapper text="Data Sudah Tersimpan di Spreadsheet">
+                                 <div className="flex items-center gap-2 bg-green-500/10 text-green-600 px-3 py-1.5 rounded-lg border border-green-500/20">
+                                   <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                                   <span className="text-[8px] font-black uppercase tracking-widest">CLOUD SYNCED</span>
+                                 </div>
+                               </TooltipWrapper>
+                            ) : (
+                               <div className="flex items-center gap-3">
+                                 <TooltipWrapper text="Data Hanya Ada di Lokal - Klik tombol Upload">
+                                   <div className="flex items-center gap-2 bg-amber-500/10 text-amber-600 px-3 py-1.5 rounded-lg border border-amber-500/20 animate-pulse">
+                                      <div className="w-1.5 h-1.5 bg-amber-600 rounded-full"></div>
+                                      <span className="text-[8px] font-black uppercase tracking-widest">LOCAL ONLY</span>
+                                   </div>
+                                 </TooltipWrapper>
+                                 <button 
+                                   disabled={syncingId === reg.id || !settings.googleScriptUrl}
+                                   onClick={() => handleManualSync(reg.id)}
+                                   className="w-8 h-8 bg-red-500 text-white rounded-lg flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-lg shadow-red-500/20"
+                                 >
+                                   {syncingId === reg.id ? (
+                                     <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                   ) : (
+                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                                   )}
+                                 </button>
                                </div>
-                             </TooltipWrapper>
-                          ) : (
-                             <TooltipWrapper text="Belum Sinkron - Klik untuk Sync">
-                               <button 
-                                 disabled={syncingId === reg.id || !settings.googleScriptUrl}
-                                 onClick={() => handleManualSync(reg.id)}
-                                 className="w-8 h-8 bg-red-500 text-white rounded-lg flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-lg shadow-red-500/20"
-                               >
-                                 {syncingId === reg.id ? (
-                                   <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                 ) : (
-                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                                 )}
-                               </button>
-                             </TooltipWrapper>
-                          )}
+                            )}
+                          </div>
                         </div>
                      </td>
                      <td className="px-8 py-6">
@@ -469,9 +472,9 @@ function doPost(e) {
                 </div>
                 <div className="text-[11px] text-stone-500 dark:text-stone-400 font-medium space-y-2 leading-relaxed">
                   <p>1. Buka <strong>Google Sheets</strong> Anda.</p>
-                  <p>2. Klik <strong>Extensions</strong> > <strong>Apps Script</strong>.</p>
+                  <p>2. Klik <strong>Extensions</strong> &gt; <strong>Apps Script</strong>.</p>
                   <p>3. Hapus semua kode bawaan dan tempel kode di bawah ini.</p>
-                  <p>4. Klik <strong>Deploy</strong> > <strong>New Deployment</strong>.</p>
+                  <p>4. Klik <strong>Deploy</strong> &gt; <strong>New Deployment</strong>.</p>
                   <p>5. Pilih type: <strong>Web App</strong>. Set "Who has access" ke <strong>Anyone</strong>.</p>
                   <p>6. Salin URL Web App dan tempel di pengaturan dashboard ini.</p>
                 </div>
