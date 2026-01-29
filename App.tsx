@@ -58,6 +58,7 @@ const App: React.FC = () => {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [formConfig, setFormConfig] = useState<FormConfig>(defaultFormConfig);
   const [adminPassInput, setAdminPassInput] = useState('');
+  const [keepHistory, setKeepHistory] = useState(false);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDarkMode);
@@ -152,7 +153,6 @@ const App: React.FC = () => {
         status: 'Menunggu Verifikasi'
       };
 
-      // 1. Kirim ke Google Script jika URL dikonfigurasi
       if (settings?.googleScriptUrl) {
         await fetch(settings.googleScriptUrl.trim(), {
           method: 'POST',
@@ -167,23 +167,20 @@ const App: React.FC = () => {
         });
       }
 
-      // 2. LOGIKA PEMBERSIHAN OTOMATIS: 
-      // Hapus data pendaftaran dari localStorage agar tidak menumpuk di perangkat.
-      // Kita tetap menyisakan pendaftaran saat ini di state 'registrations' 
-      // agar user bisa melihat tiketnya di tab Preview sebelum refresh/keluar.
-      localStorage.removeItem(DB_KEY);
-      
-      // Kosongkan riwayat lama di UI, hanya sisakan tiket yang baru dibuat
-      setRegistrations([newReg]);
+      // LOGIKA PEMBERSIHAN (OPSIONAL)
+      if (keepHistory) {
+        const updatedRegs = [...registrations, newReg];
+        setRegistrations(updatedRegs);
+        localStorage.setItem(DB_KEY, JSON.stringify(updatedRegs));
+      } else {
+        localStorage.removeItem(DB_KEY);
+        setRegistrations([newReg]);
+      }
 
       setIsModalOpen(false);
       setData(initialData);
       setAdvice('');
       setActiveTab('preview');
-      
-      // Notifikasi opsional bahwa data telah diamankan
-      console.log("Pendaftaran Berhasil & Data Lokal Dibersihkan untuk Keamanan.");
-
     } catch (err) {
       setSubmitError('Terjadi gangguan jaringan.');
     } finally {
@@ -261,15 +258,36 @@ const App: React.FC = () => {
                </div>
             </div>
 
-            <button 
-              onClick={() => validate() && setIsModalOpen(true)} 
-              className="w-full py-5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-[0.3em] rounded-2xl shadow-xl shadow-red-600/20 transition-all flex items-center justify-center gap-3"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-4 h-4">
-                <path d="M12 2L2 22h20L12 2z" />
-              </svg>
-              Konfirmasi Pendaftaran
-            </button>
+            <div className="space-y-4">
+              <label className="flex items-center gap-3 cursor-pointer group">
+                <div className="relative flex items-center">
+                  <input 
+                    type="checkbox" 
+                    checked={keepHistory} 
+                    onChange={(e) => setKeepHistory(e.target.checked)}
+                    className="sr-only"
+                  />
+                  <div className={`w-5 h-5 border-2 rounded-md transition-all ${keepHistory ? 'bg-red-600 border-red-600' : 'border-stone-300 dark:border-stone-700'}`}>
+                    {keepHistory && (
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7" /></svg>
+                    )}
+                  </div>
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-stone-500 group-hover:text-stone-800 dark:group-hover:text-stone-200 transition-colors">
+                  Simpan Riwayat di Browser Ini
+                </span>
+              </label>
+              
+              <button 
+                onClick={() => validate() && setIsModalOpen(true)} 
+                className="w-full py-5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-[0.3em] rounded-2xl shadow-xl shadow-red-600/20 transition-all flex items-center justify-center gap-3"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-4 h-4">
+                  <path d="M12 2L2 22h20L12 2z" />
+                </svg>
+                Konfirmasi Pendaftaran
+              </button>
+            </div>
           </div>
         )}
 
@@ -282,12 +300,14 @@ const App: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-8">
-                <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30 p-4 rounded-2xl mb-8">
-                   <p className="text-[9px] font-black text-amber-700 dark:text-amber-500 uppercase text-center leading-relaxed">
-                     ⚠️ Demi keamanan privasi, data lokal akan terhapus saat Anda meninggalkan halaman ini. 
-                     Silakan unduh E-Ticket Anda sekarang.
-                   </p>
-                </div>
+                {!keepHistory && (
+                  <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30 p-4 rounded-2xl mb-8">
+                    <p className="text-[9px] font-black text-amber-700 dark:text-amber-500 uppercase text-center leading-relaxed">
+                      ⚠️ Demi keamanan privasi, data lokal akan terhapus saat Anda meninggalkan halaman ini. 
+                      Silakan unduh E-Ticket Anda sekarang.
+                    </p>
+                  </div>
+                )}
                 {registrations.slice().reverse().map(reg => (
                   <ETicketCard key={reg.id} registration={reg} />
                 ))}
