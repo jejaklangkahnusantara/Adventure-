@@ -14,7 +14,6 @@ export interface PersonalData {
   identityFile: File | null;
   identityBase64?: string;
   address: string;
-  medicalNotes: string;
   status: string;
 }
 

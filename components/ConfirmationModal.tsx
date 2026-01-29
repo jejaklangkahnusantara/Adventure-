@@ -61,13 +61,6 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
                 </div>
               </div>
             </div>
-
-            {data.medicalNotes && (
-              <div className="space-y-1">
-                <span className="text-[8px] font-black text-stone-400 uppercase tracking-widest">Catatan Medis</span>
-                <p className="text-[10px] font-medium italic text-stone-500">"{data.medicalNotes}"</p>
-              </div>
-            )}
           </div>
 
           <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 rounded-xl">

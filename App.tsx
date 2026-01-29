@@ -37,7 +37,6 @@ const initialData: PersonalData = {
   extraPorter: false,
   identityFile: null,
   address: '',
-  medicalNotes: '',
   status: 'Menunggu Verifikasi'
 };
 
@@ -119,22 +118,10 @@ const App: React.FC = () => {
     }
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = (reader.result as string).split(',')[1];
-        setData(prev => ({ ...prev, identityFile: file, identityBase64: base64 }));
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleAdviceRequest = async () => {
     if (!data.mountain) return alert('Pilih gunung terlebih dahulu');
     setAdvice('Menganalisis...');
-    const result = await getMountainAdvice(data.mountain, data.startDate, data.medicalNotes);
+    const result = await getMountainAdvice(data.mountain, data.startDate);
     setAdvice(result);
   };
 
@@ -249,11 +236,13 @@ const App: React.FC = () => {
 
             <div className="bg-white dark:bg-stone-900 p-6 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-sm space-y-6">
                <Input label="Alamat Domisili" isTextArea name="address" value={data.address} onChange={handleInputChange} placeholder="Alamat saat ini..." error={errors.address} />
-               <div className="relative">
-                  <Input label="Catatan Medis" isTextArea name="medicalNotes" value={data.medicalNotes} onChange={handleInputChange} placeholder="Riwayat penyakit..." />
-                  <button onClick={handleAdviceRequest} className="absolute right-4 top-10 text-[9px] font-black bg-stone-900 dark:bg-stone-800 text-white px-3 py-1.5 rounded uppercase">Cek AI</button>
+               <div className="relative pt-6">
+                  <div className="flex justify-between items-center mb-4">
+                     <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Saran Keamanan AI</p>
+                     <button onClick={handleAdviceRequest} className="text-[9px] font-black bg-stone-900 dark:bg-stone-800 text-white px-3 py-1.5 rounded uppercase">Dapatkan Saran AI</button>
+                  </div>
+                  {advice && <div className="p-4 bg-red-50 dark:bg-red-950/20 text-xs text-red-700 dark:text-red-400 rounded-xl border border-red-100 dark:border-red-900/30">{advice}</div>}
                </div>
-               {advice && <div className="p-4 bg-red-50 dark:bg-red-950/20 text-xs text-red-700 dark:text-red-400 rounded-xl border border-red-100 dark:border-red-900/30">{advice}</div>}
             </div>
 
             <button 
