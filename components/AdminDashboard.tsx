@@ -70,6 +70,16 @@ const TooltipWrapper: React.FC<{ children: React.ReactNode; text: string }> = ({
   </div>
 );
 
+const Toggle: React.FC<{ label: string; checked: boolean; onChange: (v: boolean) => void }> = ({ label, checked, onChange }) => (
+  <label className="flex items-center justify-between p-4 bg-stone-50 dark:bg-stone-800/50 rounded-2xl cursor-pointer group hover:bg-stone-100 dark:hover:bg-stone-800 transition-all border border-stone-100 dark:border-stone-700/50">
+    <span className="text-[10px] font-black uppercase tracking-widest text-stone-600 dark:text-stone-400">{label}</span>
+    <div className="relative inline-flex items-center cursor-pointer">
+      <input type="checkbox" className="sr-only peer" checked={checked} onChange={e => onChange(e.target.checked)} />
+      <div className="w-11 h-6 bg-stone-200 peer-focus:outline-none dark:bg-stone-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent rounded-full"></div>
+    </div>
+  </label>
+);
+
 const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onUpdateRegistrations, onSettingsUpdate, onLogout, onClearAll, isDarkMode }) => {
   const [activeSubTab, setActiveTab] = useState<'overview' | 'table' | 'settings'>('overview');
   const [search, setSearch] = useState('');
@@ -110,8 +120,45 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onUpda
     }, 800);
   };
 
+  const handleExportCSV = () => {
+    if (data.length === 0) return alert("Tidak ada data untuk diunduh.");
+    
+    const exportData = data.map(r => ({
+      ID: `JL-${r.id.toString().slice(-6).toUpperCase()}`,
+      Timestamp: r.timestamp,
+      Nama_Lengkap: r.fullName,
+      WhatsApp: `'${r.whatsapp}`,
+      Email: r.email,
+      Gunung: r.mountain,
+      Tgl_Mulai: r.startDate,
+      Tgl_Selesai: r.endDate,
+      Tipe_Trip: r.tripType,
+      Kategori: r.packageCategory,
+      Alamat: r.address.replace(/\n/g, " "),
+      Status: r.status,
+      Synced_Cloud: r.isSynced ? "YES" : "NO"
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
+    const blob = new Blob([csvOutput], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `JEJAK_LANGKAH_DATA_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const syncToCloud = async (reg: Registration) => {
     if (!settings.googleScriptUrl) return false;
+    if (!settings.googleScriptUrl.includes('/exec')) {
+      alert("Peringatan: URL Script harus diakhiri dengan /exec. Periksa kembali deployment Anda.");
+      return false;
+    }
+
     try {
       await fetch(settings.googleScriptUrl.trim(), {
         method: 'POST',
@@ -169,7 +216,8 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onUpda
   const handleTestConnection = async () => {
     const url = settings.googleScriptUrl?.trim();
     if (!url) return alert("Masukkan URL Google Script terlebih dahulu!");
-    
+    if (!url.includes('/exec')) return alert("URL Salah! Harus URL /exec (Web App)");
+
     setTestStatus('sending');
     try {
       await fetch(url, {
@@ -191,33 +239,37 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onUpda
     }
   };
 
-  const stats = useMemo(() => {
-    return { total: data.length, unsynced: data.filter(r => !r.isSynced).length };
-  }, [data]);
-
   const generateAppsScriptCode = () => {
     return `/**
- * BACKEND JEJAK LANGKAH ADVENTURE (V16 - CLOUD SYNC)
+ * BACKEND JEJAK LANGKAH ADVENTURE (V17 - STABLE CLOUD)
+ * UPDATE: Menggunakan GmailApp untuk pengiriman email lebih stabil.
  * PENTING: Deploy sebagai Web App, Access: "Anyone"
  */
 
 function doPost(e) {
   var lock = LockService.getScriptLock();
-  lock.tryLock(10000); 
+  lock.tryLock(15000); // 15 seconds lock
   
   try {
     var body = e.postData.contents;
     var data = JSON.parse(body);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheets()[0];
     
-    if (sheet.getLastRow() == 0) {
+    // Pastikan sheet DATABASE_PESERTA ada
+    var sheetName = "DATABASE_PESERTA";
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) {
+      sheet = ss.insertSheet(sheetName);
       sheet.appendRow(["TIMESTAMP", "ID_BOOKING", "NAMA_LENGKAP", "WHATSAPP", "EMAIL", "GUNUNG", "TGL_MULAI", "TGL_SELESAI", "TRIP", "PAKET", "ALAMAT", "STATUS"]);
       sheet.getRange(1, 1, 1, 12).setBackground("#e11d48").setFontColor("white").setFontWeight("bold");
     }
 
     if (data.action === "TEST_CONNECTION") {
-      try { MailApp.sendEmail(data.adminEmail, "✅ CLOUD CONNECTED - Jejak Langkah", "Sistem Jejak Langkah Adventure Berhasil Terhubung pada " + data.timestamp); } catch(f) {}
+      try { 
+        GmailApp.sendEmail(data.adminEmail, "✅ CLOUD CONNECTED - Jejak Langkah", "Sistem Jejak Langkah Adventure Berhasil Terhubung pada " + data.timestamp + ". Database Anda siap digunakan."); 
+      } catch(f) {
+        Logger.log("Test email failed: " + f.toString());
+      }
       return ContentService.createTextOutput("success").setMimeType(ContentService.MimeType.TEXT);
     }
 
@@ -225,36 +277,52 @@ function doPost(e) {
       var r = data.registration;
       var bookingId = "JL-" + r.id.toString().slice(-6).toUpperCase();
       
-      // Duplication check
-      var values = sheet.getDataRange().getValues();
+      // Duplication check berdasarkan ID_BOOKING
+      var lastRow = sheet.getLastRow();
       var exists = false;
-      for (var i = 1; i < values.length; i++) {
-        if (values[i][1] == bookingId) { exists = true; break; }
+      if (lastRow > 1) {
+        var range = sheet.getRange(2, 2, lastRow - 1, 1);
+        var values = range.getValues();
+        for (var i = 0; i < values.length; i++) {
+          if (values[i][0] == bookingId) { exists = true; break; }
+        }
       }
 
       if (!exists) {
         sheet.appendRow([r.timestamp, bookingId, r.fullName, "'" + r.whatsapp, r.email, r.mountain, r.startDate, r.endDate, r.tripType, r.packageCategory, r.address, r.status]);
         
-        // Notifications
+        // Notifications menggunakan GmailApp (lebih reliabel)
         try {
           if (data.notificationPrefs.notifyUserOnNew && r.email) {
-            MailApp.sendEmail(r.email, "Konfirmasi Pendaftaran Ekspedisi [" + bookingId + "]", "Halo " + r.fullName + ", pendaftaran Anda untuk " + r.mountain + " telah kami terima.");
+            var subjectUser = "Konfirmasi Pendaftaran Ekspedisi [" + bookingId + "]";
+            var bodyUser = "Halo " + r.fullName + ",\\n\\nPendaftaran Anda untuk pendakian " + r.mountain + " telah kami terima dengan ID " + bookingId + ".\\n\\nMohon tunggu proses verifikasi admin.\\n\\nSalam Petualang,\\nJejak Langkah Adventure";
+            GmailApp.sendEmail(r.email, subjectUser, bodyUser);
           }
+          
           if (data.notificationPrefs.notifyAdminOnNew && data.adminEmail) {
-            MailApp.sendEmail(data.adminEmail, "🚨 PENDAFTARAN BARU: " + r.fullName, "Detail: " + r.mountain + " [" + bookingId + "]");
+            var subjectAdmin = "🚨 PENDAFTARAN BARU: " + r.fullName;
+            var bodyAdmin = "Ada pendaftaran baru masuk:\\nNama: " + r.fullName + "\\nTujuan: " + r.mountain + "\\nID Booking: " + bookingId + "\\nWhatsApp: " + r.whatsapp + "\\n\\nCek Dashboard Admin untuk verifikasi.";
+            GmailApp.sendEmail(data.adminEmail, subjectAdmin, bodyAdmin);
           }
-        } catch(mailErr) {}
+        } catch(mailErr) {
+          Logger.log("Notification error: " + mailErr.toString());
+        }
       }
 
       return ContentService.createTextOutput("success").setMimeType(ContentService.MimeType.TEXT);
     }
   } catch (err) {
+    Logger.log("General error: " + err.toString());
     return ContentService.createTextOutput("Error: " + err.toString()).setMimeType(ContentService.MimeType.TEXT);
   } finally {
     lock.releaseLock();
   }
 }`;
   };
+
+  const stats = useMemo(() => {
+    return { total: data.length, unsynced: data.filter(r => !r.isSynced).length };
+  }, [data]);
 
   const filteredData = useMemo(() => {
     return data.filter(item => {
@@ -265,6 +333,19 @@ function doPost(e) {
       return matchSearch && matchDate;
     });
   }, [data, search, dateStart, dateEnd]);
+
+  const updateNotifyAdmin = (v: boolean) => setSettings(p => ({ ...p, notificationPrefs: { ...p.notificationPrefs, notifyAdminOnNew: v } }));
+  const updateNotifyUser = (v: boolean) => setSettings(p => ({ ...p, notificationPrefs: { ...p.notificationPrefs, notifyUserOnNew: v } }));
+  const updateStatusTrigger = (status: string, v: boolean) => setSettings(p => ({
+    ...p,
+    notificationPrefs: {
+      ...p.notificationPrefs,
+      statusTriggers: {
+        ...p.notificationPrefs.statusTriggers,
+        [status]: v
+      }
+    }
+  }));
 
   return (
     <div className="flex flex-col gap-8 animate-in fade-in duration-500 pb-20">
@@ -281,6 +362,17 @@ function doPost(e) {
           </div>
         </div>
         <div className="flex gap-4 items-center">
+          {stats.total > 0 && (
+            <TooltipWrapper text="Ekspor Semua Data ke CSV">
+              <button 
+                onClick={handleExportCSV}
+                className="px-5 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:bg-stone-200 dark:hover:bg-stone-700 active:scale-95 flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                Unduh Data
+              </button>
+            </TooltipWrapper>
+          )}
           {stats.unsynced > 0 && (
             <div className="flex flex-col items-end gap-1.5">
                <button 
@@ -446,6 +538,54 @@ function doPost(e) {
             </div>
           </section>
 
+          {/* New Notification Preferences Section */}
+          <section className="bg-white dark:bg-stone-900 rounded-[2.5rem] border border-stone-100 dark:border-stone-800 shadow-xl overflow-hidden transition-colors">
+            <div className="p-8 border-b border-stone-50 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 flex items-center gap-4">
+              <div className="p-2 bg-stone-100 dark:bg-stone-800 rounded-xl">
+                <svg className="w-5 h-5 text-stone-600 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+              </div>
+              <div>
+                <h4 className="text-[10px] font-black text-stone-400 dark:text-stone-500 uppercase tracking-[0.2em]">Preferensi Notifikasi</h4>
+                <p className="text-[9px] font-bold text-stone-500 dark:text-stone-400 uppercase">Atur Notifikasi Otomatis</p>
+              </div>
+            </div>
+            <div className="p-8 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Toggle 
+                  label="Notif Admin (Pendaftaran Baru)" 
+                  checked={settings.notificationPrefs.notifyAdminOnNew} 
+                  onChange={updateNotifyAdmin} 
+                />
+                <Toggle 
+                  label="Notif User (Pendaftaran Baru)" 
+                  checked={settings.notificationPrefs.notifyUserOnNew} 
+                  onChange={updateNotifyUser} 
+                />
+              </div>
+              
+              <div className="pt-6">
+                <h5 className="text-[9px] font-black text-stone-400 uppercase tracking-widest mb-4 px-2">Picu Notifikasi Perubahan Status</h5>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Toggle 
+                    label="Jika Terverifikasi" 
+                    checked={settings.notificationPrefs.statusTriggers["Terverifikasi"]} 
+                    onChange={(v) => updateStatusTrigger("Terverifikasi", v)} 
+                  />
+                  <Toggle 
+                    label="Jika Diproses" 
+                    checked={settings.notificationPrefs.statusTriggers["Diproses"]} 
+                    onChange={(v) => updateStatusTrigger("Diproses", v)} 
+                  />
+                  <Toggle 
+                    label="Jika Dibatalkan" 
+                    checked={settings.notificationPrefs.statusTriggers["Dibatalkan"]} 
+                    onChange={(v) => updateStatusTrigger("Dibatalkan", v)} 
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+
           {isDirty && (
             <div className="flex gap-4 pt-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
               <button onClick={() => handleSaveSettings()} className="flex-1 py-5 bg-red-700 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-[0.3em] shadow-2xl hover:scale-[1.01] active:scale-95 transition-all">{saveStatus === 'saving' ? 'Memproses...' : 'Simpan Konfigurasi'}</button>
@@ -459,7 +599,7 @@ function doPost(e) {
           <div className="bg-white dark:bg-stone-900 w-full max-w-4xl rounded-[3rem] shadow-2xl border border-stone-200 dark:border-stone-800 flex flex-col max-h-[90vh] transition-colors">
             <div className="p-10 border-b border-stone-50 dark:border-stone-800 flex justify-between items-center bg-stone-50/30 dark:bg-stone-950/30">
               <div>
-                <h3 className="text-2xl font-black uppercase tracking-tighter text-stone-800 dark:text-white">Cloud Backend V16</h3>
+                <h3 className="text-2xl font-black uppercase tracking-tighter text-stone-800 dark:text-white">Cloud Backend V17</h3>
                 <p className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase mt-1 tracking-widest">Gunakan kode ini di Google Apps Script untuk menghubungkan form ke spreadsheet.</p>
               </div>
               <button onClick={() => setShowScriptModal(false)} className="w-12 h-12 flex items-center justify-center bg-stone-100 dark:bg-stone-800 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-2xl transition-all dark:text-white">✕</button>
@@ -470,13 +610,17 @@ function doPost(e) {
                   <h4 className="text-xs font-black uppercase tracking-widest text-stone-500 dark:text-stone-500/40">Langkah-langkah:</h4>
                   <button onClick={() => { navigator.clipboard.writeText(generateAppsScriptCode()); alert("Kode Tersalin!"); }} className="px-4 py-2 bg-red-700 text-white text-[9px] font-black uppercase rounded-xl hover:scale-105 transition-all shadow-lg shadow-red-900/20">Salin Kode</button>
                 </div>
-                <div className="text-[11px] text-stone-500 dark:text-stone-400 font-medium space-y-2 leading-relaxed">
+                <div className="text-[11px] text-stone-500 dark:text-stone-400 font-medium space-y-2 leading-relaxed bg-amber-500/5 p-6 rounded-2xl border border-amber-500/10">
+                  <p className="font-black text-amber-600 mb-2">PENTING - AGAR EMAIL TERKIRIM:</p>
                   <p>1. Buka <strong>Google Sheets</strong> Anda.</p>
                   <p>2. Klik <strong>Extensions</strong> &gt; <strong>Apps Script</strong>.</p>
                   <p>3. Hapus semua kode bawaan dan tempel kode di bawah ini.</p>
                   <p>4. Klik <strong>Deploy</strong> &gt; <strong>New Deployment</strong>.</p>
-                  <p>5. Pilih type: <strong>Web App</strong>. Set "Who has access" ke <strong>Anyone</strong>.</p>
-                  <p>6. Salin URL Web App dan tempel di pengaturan dashboard ini.</p>
+                  <p>5. Pilih type: <strong>Web App</strong>.</p>
+                  <p>6. Set "Execute as" ke: <strong>Me (Email Anda)</strong>.</p>
+                  <p>7. Set "Who has access" ke: <strong>Anyone</strong>.</p>
+                  <p>8. Klik <strong>Deploy</strong>. Anda akan diminta <strong>Authorize Access</strong>. Klik "Review Permissions", pilih akun Google Anda, klik "Advanced", lalu klik "Go to ... (unsafe)" dan klik "Allow".</p>
+                  <p>9. Salin URL Web App (berakhir dengan /exec) dan tempel di pengaturan dashboard ini.</p>
                 </div>
                 <pre className="p-8 bg-stone-900 dark:bg-stone-950 text-green-400 rounded-3xl text-[10px] font-mono overflow-x-auto leading-relaxed h-[400px] border border-stone-800 dark:border-stone-800">
                   {generateAppsScriptCode()}
