@@ -20,85 +20,55 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-stone-900/80 backdrop-blur-sm animate-in fade-in">
-      <div className="bg-white dark:bg-stone-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-stone-200 dark:border-stone-800">
-        <div className="bg-red-600 p-6 text-white">
-          <h3 className="text-sm font-black uppercase tracking-widest text-center">Ringkasan Pendaftaran</h3>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-midnight/90 backdrop-blur-xl animate-in fade-in duration-300">
+      <div className="bg-slate-850 rounded-[3rem] w-full max-w-lg overflow-hidden shadow-2xl border border-stone-800 scale-in-center">
+        <div className="bg-accent p-8 text-white text-center">
+          <h3 className="text-sm font-black uppercase tracking-[0.3em]">Validasi Data</h3>
+          <p className="text-[9px] font-bold opacity-70 mt-2">Mohon periksa kembali detail ekspedisi Anda</p>
         </div>
         
-        <div className="p-8 space-y-6 max-h-[60vh] overflow-y-auto">
-          <div className="grid grid-cols-1 gap-4">
+        <div className="p-10 space-y-8 max-h-[70vh] overflow-y-auto">
+          <div className="grid grid-cols-1 gap-6">
             <div className="space-y-1">
-              <span className="text-[8px] font-black text-stone-400 uppercase tracking-widest">Nama Lengkap</span>
-              <p className="text-sm font-black uppercase">{data.fullName || '-'}</p>
+              <span className="text-[9px] font-black text-stone-500 uppercase tracking-widest">Nama Lengkap</span>
+              <p className="text-base font-black uppercase text-white">{data.fullName || '-'}</p>
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
+            <div className="p-6 bg-midnight rounded-[2rem] border border-stone-800 space-y-6">
               <div className="space-y-1">
-                <span className="text-[8px] font-black text-stone-400 uppercase tracking-widest">WhatsApp</span>
-                <p className="text-xs font-bold">{data.whatsapp || '-'}</p>
+                <span className="text-[9px] font-black text-accent uppercase tracking-widest">Tujuan</span>
+                <p className="text-2xl font-black uppercase text-white">{data.mountain || '---'}</p>
               </div>
-              <div className="space-y-1">
-                <span className="text-[8px] font-black text-stone-400 uppercase tracking-widest">Email</span>
-                <p className="text-xs font-bold truncate">{data.email || '-'}</p>
-              </div>
-            </div>
-
-            <div className="p-4 bg-stone-50 dark:bg-stone-800/50 rounded-2xl border border-stone-100 dark:border-stone-700 space-y-4">
-              <div className="space-y-1">
-                <span className="text-[8px] font-black text-red-500 uppercase tracking-widest">Tujuan Ekspedisi</span>
-                <p className="text-lg font-black uppercase text-red-600">{data.mountain || 'Belum dipilih'}</p>
-              </div>
-              
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <span className="text-[8px] font-black text-stone-400 uppercase tracking-widest">Tanggal</span>
-                  <p className="text-[10px] font-bold">{data.startDate} - {data.endDate || 'Selesai'}</p>
+                  <span className="text-[9px] font-black text-stone-500 uppercase tracking-widest">Mulai</span>
+                  <p className="text-xs font-bold text-white">{data.startDate}</p>
                 </div>
                 <div className="space-y-1">
-                  <span className="text-[8px] font-black text-stone-400 uppercase tracking-widest">Jenis Trip</span>
-                  <p className="text-[10px] font-black uppercase">{data.tripType || '-'}</p>
+                  <span className="text-[9px] font-black text-stone-500 uppercase tracking-widest">Trip</span>
+                  <p className="text-xs font-bold text-white uppercase">{data.tripType || 'REGULER'}</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="p-3 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 rounded-xl">
-            <p className="text-[9px] font-bold text-red-600 dark:text-red-400 text-center uppercase tracking-tighter">
-              Pastikan semua data di atas sudah benar sebelum melanjutkan.
-            </p>
-          </div>
-
-          {error && (
-            <div className="p-3 bg-red-600 rounded-xl text-center">
-              <p className="text-[9px] font-black text-white uppercase">{error}</p>
-            </div>
-          )}
+          {error && <div className="p-4 bg-red-900/30 border border-red-800 rounded-2xl text-[10px] font-black text-red-400 uppercase text-center">{error}</div>}
         </div>
 
-        <div className="p-6 bg-stone-50 dark:bg-stone-800/50 flex gap-4">
+        <div className="p-8 bg-slate-800/50 flex gap-4">
           <button 
             onClick={onClose} 
             disabled={isSending} 
-            className="flex-1 py-4 text-[10px] font-black uppercase text-stone-400 hover:text-stone-600 transition-colors"
+            className="flex-1 py-5 text-[11px] font-black uppercase text-stone-500 hover:text-white transition-colors"
           >
-            Kembali
+            Batal
           </button>
           <button 
             onClick={onConfirm} 
             disabled={isSending} 
-            className="flex-[2] py-4 bg-red-600 hover:bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-red-600/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+            className="flex-[2] py-5 bg-accent hover:bg-rose-500 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-xl shadow-accent/20 active:scale-95 transition-all flex items-center justify-center gap-3"
           >
-            {isSending ? (
-              <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            ) : (
-              <>
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-                </svg>
-                Konfirmasi & Daftar
-              </>
-            )}
+            {isSending ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : "Ya, Daftarkan!"}
           </button>
         </div>
       </div>

@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#b91c1c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#e11d48">
   <title>Jejak Langkah Adventure</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -12,6 +12,14 @@
       darkMode: 'class',
       theme: {
         extend: {
+          colors: {
+            midnight: '#0a121e',
+            slate: {
+              850: '#111d2f',
+              800: '#1a2b45',
+            },
+            accent: '#e11d48'
+          },
           fontFamily: {
             inter: ['Inter', 'sans-serif'],
           },
@@ -21,41 +29,20 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     body {
       font-family: 'Inter', sans-serif;
       -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
+      background-color: #0a121e;
     }
     @media print {
       .no-print { display: none !important; }
-      .print-only { display: block !important; }
       body { background: white !important; }
     }
-    .print-only { display: none; }
-    
-    ::-webkit-scrollbar {
-      width: 6px;
-    }
-    ::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #d6d3d1;
-      border-radius: 10px;
-    }
-    .dark ::-webkit-scrollbar-thumb {
-      background: #b91c1c;
-    }
-    
-    /* Mencegah flicker warna saat reload */
-    html.dark {
-      background-color: #0c0a09; /* stone-950 */
-    }
-    html {
-      background-color: #fafaf9; /* stone-50 */
-    }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0a121e; }
+    ::-webkit-scrollbar-thumb { background: #e11d48; border-radius: 10px; }
   </style>
 <script type="importmap">
 {
@@ -74,7 +61,7 @@
 }
 </script>
 </head>
-<body class="bg-stone-50 dark:bg-stone-950 transition-colors duration-500 min-h-screen">
+<body class="bg-midnight text-stone-100 transition-colors duration-500 min-h-screen">
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

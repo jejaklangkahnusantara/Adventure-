@@ -8,21 +8,21 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement | HTMLTe
 }
 
 const Input: React.FC<InputProps> = ({ label, isTextArea, error, ...props }) => {
-  const baseClasses = `w-full px-4 py-3 bg-stone-50 dark:bg-stone-800/50 border-2 rounded-xl outline-none transition-all text-sm font-bold ${
+  const baseClasses = `w-full px-5 py-4 bg-slate-800 border-2 rounded-2xl outline-none transition-all text-sm font-medium text-white placeholder:text-stone-600 ${
     error 
       ? "border-red-500/50" 
-      : "border-stone-100 dark:border-stone-800 focus:border-red-600 dark:focus:border-red-600"
+      : "border-transparent focus:border-accent shadow-inner"
   }`;
 
   return (
-    <div className="flex flex-col gap-1.5 w-full">
-      <label className="text-[10px] font-black text-stone-400 uppercase tracking-widest px-1">{label}</label>
+    <div className="flex flex-col gap-2.5 w-full">
+      <label className="text-[10px] font-extrabold text-stone-500 uppercase tracking-widest px-1">{label}</label>
       {isTextArea ? (
-        <textarea {...(props as any)} className={`${baseClasses} min-h-[100px]`} />
+        <textarea {...(props as any)} className={`${baseClasses} min-h-[120px] resize-none`} />
       ) : (
         <input {...props} className={baseClasses} />
       )}
-      {error && <span className="text-[9px] font-bold text-red-500 uppercase tracking-widest px-1">{error}</span>}
+      {error && <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest px-1">{error}</span>}
     </div>
   );
 };

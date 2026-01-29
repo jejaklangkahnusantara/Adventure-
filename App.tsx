@@ -8,7 +8,6 @@ import AdminDashboard from './components/AdminDashboard';
 import ConfirmationModal from './components/ConfirmationModal';
 import ETicketCard from './components/ETicketCard';
 import WelcomePopup from './components/WelcomePopup';
-import { getMountainAdvice } from './services/geminiService';
 
 const DEFAULT_ADMIN_EMAIL = "jejaklangkah.nusantara.id@gmail.com";
 const THEME_KEY = 'jejak_langkah_theme';
@@ -41,16 +40,16 @@ const initialData: PersonalData = {
 };
 
 const App: React.FC = () => {
+  // Inisialisasi tema dari localStorage
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    const saved = localStorage.getItem(THEME_KEY);
-    return saved ? saved === 'dark' : true;
+    const savedTheme = localStorage.getItem(THEME_KEY);
+    return savedTheme ? savedTheme === 'dark' : true;
   });
 
   const [data, setData] = useState<PersonalData>(initialData);
   const [errors, setErrors] = useState<FormErrors>({});
   const [activeTab, setActiveTab] = useState<'edit' | 'preview' | 'admin'>('edit');
   const [registrations, setRegistrations] = useState<Registration[]>([]);
-  const [advice, setAdvice] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isWelcomeOpen, setIsWelcomeOpen] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -60,9 +59,15 @@ const App: React.FC = () => {
   const [adminPassInput, setAdminPassInput] = useState('');
   const [keepHistory, setKeepHistory] = useState(false);
 
+  // Efek untuk mengaplikasikan tema dan menyimpan ke localStorage
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', isDarkMode);
-    localStorage.setItem(THEME_KEY, isDarkMode ? 'dark' : 'light');
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem(THEME_KEY, 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem(THEME_KEY, 'light');
+    }
   }, [isDarkMode]);
 
   useEffect(() => {
@@ -84,28 +89,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  const closeWelcome = () => {
-    setIsWelcomeOpen(false);
-    localStorage.setItem(WELCOME_SHOWN_KEY, 'true');
-  };
-
-  const validate = (): boolean => {
-    const newErrors: FormErrors = {};
-    if (!data.fullName) newErrors.fullName = "Wajib diisi";
-    if (!data.email) newErrors.email = "Wajib diisi";
-    if (!data.whatsapp) newErrors.whatsapp = "Wajib diisi";
-    if (!data.mountain) newErrors.mountain = "Pilih tujuan";
-    if (!data.startDate) newErrors.startDate = "Wajib diisi";
-    if (!data.address) newErrors.address = "Wajib diisi";
-    if (!data.climberCode) newErrors.climberCode = "Wajib diisi";
-    
-    setErrors(newErrors);
-    if (Object.keys(newErrors).length > 0) {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-    return Object.keys(newErrors).length === 0;
-  };
-
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setData(prev => ({ ...prev, [name]: value }));
@@ -118,24 +101,18 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAdviceRequest = async () => {
-    if (!data.mountain) return alert('Pilih gunung terlebih dahulu');
-    setAdvice('Menganalisis...');
-    const result = await getMountainAdvice(data.mountain, data.startDate);
-    setAdvice(result);
-  };
-
-  const handleUpdateStatus = async (id: number, status: string) => {
-    const updated = registrations.map(r => r.id === id ? { ...r, status } : r);
-    setRegistrations(updated);
-    localStorage.setItem(DB_KEY, JSON.stringify(updated));
-  };
-
-  const handleClearAllRegistrations = () => {
-    if (window.confirm("Hapus semua data pendaftaran dari penyimpanan lokal?")) {
-      setRegistrations([]);
-      localStorage.removeItem(DB_KEY);
+  const validate = (): boolean => {
+    const newErrors: FormErrors = {};
+    if (!data.fullName) newErrors.fullName = "Wajib diisi";
+    if (!data.whatsapp) newErrors.whatsapp = "Wajib diisi";
+    if (!data.mountain) newErrors.mountain = "Pilih tujuan";
+    if (!data.startDate) newErrors.startDate = "Wajib diisi";
+    
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async () => {
@@ -158,16 +135,10 @@ const App: React.FC = () => {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({
-            action: 'NEW_REGISTRATION',
-            registration: newReg,
-            adminEmail: settings.adminEmail || DEFAULT_ADMIN_EMAIL,
-            notificationPrefs: settings.notificationPrefs
-          })
+          body: JSON.stringify({ action: 'NEW_REGISTRATION', registration: newReg, adminEmail: settings.adminEmail || DEFAULT_ADMIN_EMAIL })
         });
       }
 
-      // LOGIKA PEMBERSIHAN (OPSIONAL)
       if (keepHistory) {
         const updatedRegs = [...registrations, newReg];
         setRegistrations(updatedRegs);
@@ -179,7 +150,6 @@ const App: React.FC = () => {
 
       setIsModalOpen(false);
       setData(initialData);
-      setAdvice('');
       setActiveTab('preview');
     } catch (err) {
       setSubmitError('Terjadi gangguan jaringan.');
@@ -189,104 +159,143 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-stone-50 dark:bg-stone-950 flex flex-col text-stone-900 dark:text-stone-100 transition-colors duration-500 font-inter">
-      <header className="bg-white dark:bg-stone-900 sticky top-0 z-50 border-b border-stone-200 dark:border-stone-800 no-print">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-red-600 rounded flex items-center justify-center shadow-lg shadow-red-600/20">
-              <svg viewBox="0 0 500 500" className="w-5 h-5 fill-white"><path d="M250 80 L420 380 L380 380 L250 150 L120 380 L80 380 Z" /></svg>
+    <div className={`min-h-screen flex flex-col font-inter selection:bg-accent selection:text-white transition-colors duration-500 ${isDarkMode ? 'bg-midnight text-stone-100' : 'bg-stone-50 text-stone-900'}`}>
+      {/* HEADER SECTION */}
+      <header className={`${isDarkMode ? 'bg-midnight/80 border-stone-800' : 'bg-white/80 border-stone-200'} backdrop-blur-xl sticky top-0 z-50 border-b no-print`}>
+        <div className="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center shadow-lg shadow-accent/20">
+              <svg viewBox="0 0 500 500" className="w-6 h-6 fill-white"><path d="M250 80 L420 380 L380 380 L250 150 L120 380 L80 380 Z" /></svg>
             </div>
-            <h1 className="text-sm font-black uppercase tracking-tighter">Jejak Langkah</h1>
+            <div>
+              <h1 className={`text-sm font-black uppercase tracking-widest leading-tight ${isDarkMode ? 'text-white' : 'text-stone-900'}`}>Jejak Langkah</h1>
+              <p className="text-[10px] font-bold text-stone-500 uppercase tracking-tighter">Adventure Expedition</p>
+            </div>
           </div>
           
-          <div className="flex items-center gap-4">
-            <nav className="flex gap-4">
-              {['edit', 'preview', 'admin'].map(tab => (
-                <button 
-                  key={tab} 
-                  onClick={() => setActiveTab(tab as any)} 
-                  className={`text-[10px] font-black uppercase tracking-widest ${activeTab === tab ? 'text-red-600' : 'text-stone-400'}`}
-                >
-                  {tab === 'edit' ? 'Formulir' : tab === 'preview' ? 'Tiket' : 'Admin'}
-                </button>
-              ))}
-            </nav>
+          <div className={`flex items-center gap-2 p-1.5 rounded-2xl border shadow-2xl ${isDarkMode ? 'bg-slate-850 border-stone-800/50' : 'bg-stone-100 border-stone-200'}`}>
             <button 
-              onClick={() => setIsDarkMode(!isDarkMode)} 
-              className="text-stone-400 hover:text-red-600 transition-colors"
+              onClick={() => setActiveTab('edit')} 
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'edit' ? 'bg-accent text-white shadow-xl shadow-accent/20' : 'text-stone-400 hover:text-stone-600 dark:hover:text-white'}`}
             >
-              {isDarkMode ? '☀️' : '🌙'}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+              Formulir
+            </button>
+            <button 
+              onClick={() => setActiveTab('preview')} 
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'preview' ? 'bg-accent text-white shadow-xl shadow-accent/20' : 'text-stone-400 hover:text-stone-600 dark:hover:text-white'}`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 012-2h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5z" /></svg>
+              Tiket Saya
+            </button>
+            <button 
+              onClick={() => setActiveTab('admin')} 
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'admin' ? 'bg-accent text-white shadow-xl shadow-accent/20' : 'text-stone-400 hover:text-stone-600 dark:hover:text-white'}`}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+              Admin
             </button>
           </div>
+
+          <button 
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className={`w-10 h-10 flex items-center justify-center rounded-full border shadow-xl transition-all ${isDarkMode ? 'bg-slate-850 border-stone-800 text-yellow-400 hover:bg-slate-800' : 'bg-stone-100 border-stone-200 text-slate-700 hover:bg-stone-200'}`}
+            aria-label="Toggle Theme"
+          >
+            {isDarkMode ? (
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" /></svg>
+            ) : (
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" /></svg>
+            )}
+          </button>
         </div>
       </header>
 
-      <main className="flex-1 max-w-4xl mx-auto w-full p-6 py-12">
+      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-12">
         {activeTab === 'edit' && (
-          <div className="space-y-12 animate-in fade-in duration-500">
-            <div className="text-center space-y-2">
-              <h2 className="text-2xl font-black uppercase tracking-tight">Pendaftaran Pendakian</h2>
-              <p className="text-stone-400 text-xs font-bold uppercase tracking-widest">Lengkapi data diri untuk izin masuk kawasan</p>
+          <div className="animate-in fade-in slide-in-from-bottom-6 duration-700">
+            {/* HERO SECTION */}
+            <div className="mb-16">
+              <h2 className={`text-7xl font-black leading-[0.9] tracking-tighter ${isDarkMode ? 'text-white' : 'text-stone-900'}`}>
+                Mulai <span className="text-accent">Pendakian</span> Anda
+              </h2>
+              <p className="mt-6 text-stone-500 text-lg font-medium max-w-2xl">
+                Isi data pendaftaran dengan teliti untuk keamanan pendakian Anda. Pastikan dokumen identitas masih berlaku.
+              </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-6 bg-white dark:bg-stone-900 p-6 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-sm">
-                <Input label="Nama Lengkap" name="fullName" value={data.fullName} onChange={handleInputChange} placeholder="E.g. Jaka Sembung" error={errors.fullName} />
-                <Input label="NIK / ID Card" name="climberCode" value={data.climberCode} onChange={handleInputChange} placeholder="E.g. 1234..." error={errors.climberCode} />
-                <Input label="WhatsApp" name="whatsapp" value={data.whatsapp} onChange={handleInputChange} placeholder="0812..." error={errors.whatsapp} />
-                <Input label="Email" name="email" type="email" value={data.email} onChange={handleInputChange} placeholder="name@domain.com" error={errors.email} />
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+              {/* SECTION 1: PERSONAL */}
+              <div className={`lg:col-span-7 p-10 rounded-[3rem] border shadow-2xl relative overflow-hidden group ${isDarkMode ? 'bg-slate-850 border-stone-800' : 'bg-white border-stone-200'}`}>
+                <div className="absolute top-0 right-0 w-64 h-64 bg-accent/5 rounded-full blur-[100px] pointer-events-none group-hover:bg-accent/10 transition-all duration-700"></div>
+                <div className="flex items-center gap-5 mb-10">
+                  <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center text-white font-black text-sm shadow-lg shadow-accent/20">1</div>
+                  <h3 className={`text-xl font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-stone-900'}`}>Informasi Personal</h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <Input label="Nama Lengkap" name="fullName" value={data.fullName} onChange={handleInputChange} placeholder="Sesuai KTP" error={errors.fullName} />
+                  <Input label="Nomor WhatsApp" name="whatsapp" value={data.whatsapp} onChange={handleInputChange} placeholder="Contoh: 0812..." error={errors.whatsapp} />
+                  <Input label="Email" name="email" type="email" value={data.email} onChange={handleInputChange} placeholder="email@anda.com" error={errors.email} />
+                  <Input label="Kode Pendaki (Merbabu)" name="climberCode" value={data.climberCode} onChange={handleInputChange} placeholder="Opsional" />
+                </div>
+                
+                <div className={`mt-8 pt-8 border-t ${isDarkMode ? 'border-stone-800/50' : 'border-stone-100'}`}>
+                  <Input label="Alamat Domisili" isTextArea name="address" value={data.address} onChange={handleInputChange} placeholder="Alamat lengkap saat ini..." />
+                </div>
               </div>
 
-              <div className="space-y-6 bg-white dark:bg-stone-900 p-6 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-sm">
-                <Select label="Gunung Tujuan" name="mountain" options={formConfig.mountains} value={data.mountain} onChange={handleInputChange} error={errors.mountain} />
-                <div className="grid grid-cols-2 gap-4">
-                  <Input label="Tgl Mulai" type="date" name="startDate" value={data.startDate} onChange={handleInputChange} error={errors.startDate} />
-                  <Input label="Tgl Selesai" type="date" name="endDate" value={data.endDate} onChange={handleInputChange} />
+              {/* SECTION 2: DETAIL TRIP */}
+              <div className="lg:col-span-5 flex flex-col gap-10">
+                <div className={`p-10 rounded-[3rem] border shadow-2xl ${isDarkMode ? 'bg-slate-850 border-stone-800' : 'bg-white border-stone-200'}`}>
+                  <div className="flex items-center gap-5 mb-10">
+                    <div className="w-10 h-10 bg-accent rounded-xl flex items-center justify-center text-white font-black text-sm shadow-lg shadow-accent/20">2</div>
+                    <h3 className={`text-xl font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-stone-900'}`}>Detail Trip</h3>
+                  </div>
+
+                  <div className="space-y-8">
+                    <Select label="Tujuan Gunung" name="mountain" options={formConfig.mountains} value={data.mountain} onChange={handleInputChange} error={errors.mountain} />
+                    
+                    <div className="grid grid-cols-2 gap-6">
+                      <Input label="Mulai" type="date" name="startDate" value={data.startDate} onChange={handleInputChange} error={errors.startDate} />
+                      <Input label="Selesai" type="date" name="endDate" value={data.endDate} onChange={handleInputChange} />
+                    </div>
+
+                    <div className="pt-4">
+                      <RadioGroup label="Kategori Paket" options={formConfig.packageCategories} value={data.packageCategory} onChange={(v) => setData(p => ({ ...p, packageCategory: v }))} />
+                    </div>
+                  </div>
                 </div>
-                <RadioGroup label="Jenis Trip" options={formConfig.tripTypes} value={data.tripType} onChange={(v) => setData(p => ({ ...p, tripType: v }))} columns={1} />
+
+                <div className="space-y-4">
+                  <label className="flex items-center gap-3 cursor-pointer group">
+                    <div className="relative flex items-center">
+                      <input 
+                        type="checkbox" 
+                        checked={keepHistory} 
+                        onChange={(e) => setKeepHistory(e.target.checked)}
+                        className="sr-only"
+                      />
+                      <div className={`w-5 h-5 border-2 rounded-md transition-all ${keepHistory ? 'bg-red-600 border-red-600' : isDarkMode ? 'border-stone-700' : 'border-stone-300'}`}>
+                        {keepHistory && (
+                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7" /></svg>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-stone-500 group-hover:text-stone-800 dark:group-hover:text-stone-200 transition-colors">
+                      Simpan Riwayat di Browser Ini
+                    </span>
+                  </label>
+
+                  <button 
+                    onClick={() => validate() && setIsModalOpen(true)}
+                    className="w-full py-6 bg-accent hover:bg-rose-500 text-white font-black text-sm uppercase tracking-[0.3em] rounded-[2rem] shadow-2xl shadow-accent/30 transition-all active:scale-95 group"
+                  >
+                    Daftar Sekarang
+                    <span className="inline-block ml-3 group-hover:translate-x-2 transition-transform duration-300">→</span>
+                  </button>
+                </div>
               </div>
-            </div>
-
-            <div className="bg-white dark:bg-stone-900 p-6 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-sm space-y-6">
-               <Input label="Alamat Domisili" isTextArea name="address" value={data.address} onChange={handleInputChange} placeholder="Alamat saat ini..." error={errors.address} />
-               <div className="relative pt-6">
-                  <div className="flex justify-between items-center mb-4">
-                     <p className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Saran Keamanan AI</p>
-                     <button onClick={handleAdviceRequest} className="text-[9px] font-black bg-stone-900 dark:bg-stone-800 text-white px-3 py-1.5 rounded uppercase">Dapatkan Saran AI</button>
-                  </div>
-                  {advice && <div className="p-4 bg-red-50 dark:bg-red-950/20 text-xs text-red-700 dark:text-red-400 rounded-xl border border-red-100 dark:border-red-900/30">{advice}</div>}
-               </div>
-            </div>
-
-            <div className="space-y-4">
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <div className="relative flex items-center">
-                  <input 
-                    type="checkbox" 
-                    checked={keepHistory} 
-                    onChange={(e) => setKeepHistory(e.target.checked)}
-                    className="sr-only"
-                  />
-                  <div className={`w-5 h-5 border-2 rounded-md transition-all ${keepHistory ? 'bg-red-600 border-red-600' : 'border-stone-300 dark:border-stone-700'}`}>
-                    {keepHistory && (
-                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="4" d="M5 13l4 4L19 7" /></svg>
-                    )}
-                  </div>
-                </div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-stone-500 group-hover:text-stone-800 dark:group-hover:text-stone-200 transition-colors">
-                  Simpan Riwayat di Browser Ini
-                </span>
-              </label>
-              
-              <button 
-                onClick={() => validate() && setIsModalOpen(true)} 
-                className="w-full py-5 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase tracking-[0.3em] rounded-2xl shadow-xl shadow-red-600/20 transition-all flex items-center justify-center gap-3"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-4 h-4">
-                  <path d="M12 2L2 22h20L12 2z" />
-                </svg>
-                Konfirmasi Pendaftaran
-              </button>
             </div>
           </div>
         )}
@@ -294,15 +303,15 @@ const App: React.FC = () => {
         {activeTab === 'preview' && (
           <div className="max-w-xl mx-auto animate-in fade-in duration-500">
             {registrations.length === 0 ? (
-              <div className="text-center py-20">
-                 <p className="opacity-50 text-xs font-bold uppercase tracking-widest">Belum ada riwayat pendaftaran.</p>
-                 <button onClick={() => setActiveTab('edit')} className="mt-4 text-[10px] font-black text-red-600 underline uppercase tracking-widest">Kembali Ke Formulir</button>
+              <div className={`text-center py-20 rounded-[3rem] border ${isDarkMode ? 'bg-slate-850 border-stone-800' : 'bg-white border-stone-200'}`}>
+                 <p className="text-stone-500 text-xs font-bold uppercase tracking-widest">Belum ada riwayat pendaftaran.</p>
+                 <button onClick={() => setActiveTab('edit')} className="mt-6 px-8 py-3 bg-accent text-white rounded-xl text-[10px] font-black uppercase tracking-[0.2em]">Cari Ekspedisi</button>
               </div>
             ) : (
-              <div className="space-y-8">
+              <div className="space-y-10">
                 {!keepHistory && (
-                  <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30 p-4 rounded-2xl mb-8">
-                    <p className="text-[9px] font-black text-amber-700 dark:text-amber-500 uppercase text-center leading-relaxed">
+                  <div className={`border p-4 rounded-2xl mb-8 ${isDarkMode ? 'bg-amber-900/10 border-amber-900/30' : 'bg-amber-50 border-amber-200'}`}>
+                    <p className={`text-[9px] font-black uppercase text-center leading-relaxed ${isDarkMode ? 'text-amber-500' : 'text-amber-700'}`}>
                       ⚠️ Demi keamanan privasi, data lokal akan terhapus saat Anda meninggalkan halaman ini. 
                       Silakan unduh E-Ticket Anda sekarang.
                     </p>
@@ -318,36 +327,29 @@ const App: React.FC = () => {
 
         {activeTab === 'admin' && (
           isAdminAuthenticated ? (
-            <AdminDashboard 
-              data={registrations} 
-              onLogout={() => setIsAdminAuthenticated(false)} 
-              isDarkMode={isDarkMode} 
-              onSettingsUpdate={(s) => setFormConfig(s.formConfig)}
-              onUpdateStatus={handleUpdateStatus}
-              onClearAll={handleClearAllRegistrations}
-            />
+            <AdminDashboard data={registrations} onLogout={() => setIsAdminAuthenticated(false)} isDarkMode={isDarkMode} />
           ) : (
-            <div className="max-w-xs mx-auto bg-white dark:bg-stone-900 p-8 rounded-2xl border border-stone-200 dark:border-stone-800 space-y-6 text-center shadow-2xl">
-              <h2 className="text-xs font-black uppercase tracking-widest">Admin Access</h2>
+            <div className={`max-w-sm mx-auto p-10 rounded-[3rem] border text-center shadow-2xl space-y-8 ${isDarkMode ? 'bg-slate-850 border-stone-800' : 'bg-white border-stone-200'}`}>
+              <h2 className={`text-sm font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-stone-900'}`}>Admin Access</h2>
               <input 
                 type="password" 
                 value={adminPassInput} 
                 onChange={(e) => setAdminPassInput(e.target.value)}
                 placeholder="Password" 
-                className="w-full px-4 py-3 bg-stone-50 dark:bg-stone-800 border-none rounded-xl text-center outline-none focus:ring-2 focus:ring-red-600"
+                className={`w-full px-5 py-4 border-2 rounded-2xl text-center outline-none focus:border-accent ${isDarkMode ? 'bg-midnight border-stone-800 text-white' : 'bg-stone-50 border-stone-200 text-stone-900'}`}
               />
-              <button onClick={() => adminPassInput === 'admin123' ? setIsAdminAuthenticated(true) : alert('Salah!')} className="w-full py-3 bg-red-600 text-white font-black text-[10px] uppercase rounded-xl">Login</button>
+              <button onClick={() => adminPassInput === 'admin123' ? setIsAdminAuthenticated(true) : alert('Akses Ditolak!')} className="w-full py-4 bg-accent text-white font-black text-[10px] uppercase rounded-2xl">Masuk Panel</button>
             </div>
           )
         )}
       </main>
 
-      <footer className="p-10 text-center opacity-30 text-[9px] font-black uppercase tracking-[0.4em] no-print">
-        &copy; 2024 Jejak Langkah Adventure
+      <footer className="p-12 text-center text-[10px] font-bold text-stone-600 uppercase tracking-[0.5em] no-print">
+        © 2024 JEJAK LANGKAH ADVENTURE • EXPEDITION SYSTEM V1.5
       </footer>
 
       <ConfirmationModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onConfirm={handleSubmit} data={data} isSending={isSending} error={submitError} bankInfo={{bankName: 'BRI', accountNumber: '570401009559504', accountName: 'ILHAM FADHILAH'}} />
-      <WelcomePopup isOpen={isWelcomeOpen} onClose={closeWelcome} />
+      <WelcomePopup isOpen={isWelcomeOpen} onClose={() => setIsWelcomeOpen(false)} />
     </div>
   );
 };
