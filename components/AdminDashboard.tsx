@@ -154,26 +154,30 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onUpda
 
   const syncToCloud = async (reg: Registration) => {
     if (!settings.googleScriptUrl) return false;
-    if (!settings.googleScriptUrl.includes('/exec')) {
+    const url = settings.googleScriptUrl.trim();
+    if (!url.includes('/exec')) {
       alert("Peringatan: URL Script harus diakhiri dengan /exec. Periksa kembali deployment Anda.");
       return false;
     }
 
     try {
-      await fetch(settings.googleScriptUrl.trim(), {
+      // Strip large identity images to prevent GAS cell limits (50k chars) and payload timeouts
+      const { identityFile, ...cloudReg } = reg;
+
+      await fetch(url, {
         method: 'POST',
-        mode: 'no-cors',
+        mode: 'no-cors', // Standard for GAS Web App to avoid preflight issues
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           action: 'NEW_REGISTRATION',
-          registration: reg,
+          registration: cloudReg,
           adminEmail: settings.adminEmail,
           notificationPrefs: settings.notificationPrefs
         })
       });
       return true;
     } catch (e) {
-      console.error(e);
+      console.error("Cloud sync error:", e);
       return false;
     }
   };
@@ -241,43 +245,48 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onUpda
 
   const generateAppsScriptCode = () => {
     return `/**
- * BACKEND JEJAK LANGKAH ADVENTURE (V17 - STABLE CLOUD)
- * UPDATE: Menggunakan GmailApp untuk pengiriman email lebih stabil.
- * PENTING: Deploy sebagai Web App, Access: "Anyone"
+ * BACKEND JEJAK LANGKAH ADVENTURE (V17.5 - ROBUST CLOUD)
+ * UPDATE: Optimalisasi payload, penanganan limit Google Sheets, dan GmailApp.
+ * PENTING: Deploy sebagai Web App, Access: "Anyone", Execute as: "Me"
  */
 
 function doPost(e) {
   var lock = LockService.getScriptLock();
-  lock.tryLock(15000); // 15 seconds lock
+  lock.tryLock(30000); // Wait up to 30s
   
   try {
-    var body = e.postData.contents;
-    var data = JSON.parse(body);
+    if (!e || !e.postData || !e.postData.contents) {
+      return ContentService.createTextOutput("Error: No data received").setMimeType(ContentService.MimeType.TEXT);
+    }
+
+    var data = JSON.parse(e.postData.contents);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    
-    // Pastikan sheet DATABASE_PESERTA ada
     var sheetName = "DATABASE_PESERTA";
     var sheet = ss.getSheetByName(sheetName);
+    
+    // Auto-create sheet if missing
     if (!sheet) {
       sheet = ss.insertSheet(sheetName);
       sheet.appendRow(["TIMESTAMP", "ID_BOOKING", "NAMA_LENGKAP", "WHATSAPP", "EMAIL", "GUNUNG", "TGL_MULAI", "TGL_SELESAI", "TRIP", "PAKET", "ALAMAT", "STATUS"]);
-      sheet.getRange(1, 1, 1, 12).setBackground("#e11d48").setFontColor("white").setFontWeight("bold");
+      sheet.getRange(1, 1, 1, 12).setBackground("#e11d48").setFontColor("white").setFontWeight("bold").setFrozenRows(1);
     }
 
     if (data.action === "TEST_CONNECTION") {
       try { 
-        GmailApp.sendEmail(data.adminEmail, "✅ CLOUD CONNECTED - Jejak Langkah", "Sistem Jejak Langkah Adventure Berhasil Terhubung pada " + data.timestamp + ". Database Anda siap digunakan."); 
+        if (data.adminEmail) {
+          GmailApp.sendEmail(data.adminEmail, "✅ CLOUD CONNECTED - Jejak Langkah", "Sistem Jejak Langkah Adventure Berhasil Terhubung pada " + (data.timestamp || new Date().toLocaleString()) + ". Database Anda siap digunakan."); 
+        }
       } catch(f) {
-        Logger.log("Test email failed: " + f.toString());
+        console.log("Test email failed: " + f.toString());
       }
       return ContentService.createTextOutput("success").setMimeType(ContentService.MimeType.TEXT);
     }
 
     if (data.action === "NEW_REGISTRATION") {
       var r = data.registration;
-      var bookingId = "JL-" + r.id.toString().slice(-6).toUpperCase();
+      var bookingId = "JL-" + (r.id ? r.id.toString().slice(-6).toUpperCase() : "TEMP");
       
-      // Duplication check berdasarkan ID_BOOKING
+      // Duplication check
       var lastRow = sheet.getLastRow();
       var exists = false;
       if (lastRow > 1) {
@@ -289,30 +298,49 @@ function doPost(e) {
       }
 
       if (!exists) {
-        sheet.appendRow([r.timestamp, bookingId, r.fullName, "'" + r.whatsapp, r.email, r.mountain, r.startDate, r.endDate, r.tripType, r.packageCategory, r.address, r.status]);
+        // Safe mapping to prevent row errors
+        var rowData = [
+          r.timestamp || new Date().toLocaleString(),
+          bookingId,
+          r.fullName || "N/A",
+          "'" + (r.whatsapp || ""),
+          r.email || "",
+          r.mountain || "",
+          r.startDate || "",
+          r.endDate || "",
+          r.tripType || "",
+          r.packageCategory || "",
+          r.address || "",
+          r.status || "Menunggu Verifikasi"
+        ];
         
-        // Notifications menggunakan GmailApp (lebih reliabel)
+        sheet.appendRow(rowData);
+        
+        // Notifications
+        var prefs = data.notificationPrefs || {};
         try {
-          if (data.notificationPrefs.notifyUserOnNew && r.email) {
+          if (prefs.notifyUserOnNew && r.email) {
             var subjectUser = "Konfirmasi Pendaftaran Ekspedisi [" + bookingId + "]";
             var bodyUser = "Halo " + r.fullName + ",\\n\\nPendaftaran Anda untuk pendakian " + r.mountain + " telah kami terima dengan ID " + bookingId + ".\\n\\nMohon tunggu proses verifikasi admin.\\n\\nSalam Petualang,\\nJejak Langkah Adventure";
             GmailApp.sendEmail(r.email, subjectUser, bodyUser);
           }
           
-          if (data.notificationPrefs.notifyAdminOnNew && data.adminEmail) {
+          if (prefs.notifyAdminOnNew && data.adminEmail) {
             var subjectAdmin = "🚨 PENDAFTARAN BARU: " + r.fullName;
             var bodyAdmin = "Ada pendaftaran baru masuk:\\nNama: " + r.fullName + "\\nTujuan: " + r.mountain + "\\nID Booking: " + bookingId + "\\nWhatsApp: " + r.whatsapp + "\\n\\nCek Dashboard Admin untuk verifikasi.";
             GmailApp.sendEmail(data.adminEmail, subjectAdmin, bodyAdmin);
           }
         } catch(mailErr) {
-          Logger.log("Notification error: " + mailErr.toString());
+          console.log("Notification error: " + mailErr.toString());
         }
       }
 
       return ContentService.createTextOutput("success").setMimeType(ContentService.MimeType.TEXT);
     }
+    
+    return ContentService.createTextOutput("Error: Action not recognized").setMimeType(ContentService.MimeType.TEXT);
   } catch (err) {
-    Logger.log("General error: " + err.toString());
+    console.log("General error: " + err.toString());
     return ContentService.createTextOutput("Error: " + err.toString()).setMimeType(ContentService.MimeType.TEXT);
   } finally {
     lock.releaseLock();
@@ -349,38 +377,50 @@ function doPost(e) {
 
   return (
     <div className="flex flex-col gap-8 animate-in fade-in duration-500 pb-20">
-      <div className="flex justify-between items-center bg-white dark:bg-stone-900 p-4 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-sm transition-colors">
-        <div className="flex items-center gap-3">
-          <TooltipWrapper text="Panel Kendali Utama">
-            <div className="w-10 h-10 bg-red-700 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-900/20">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+      <div className="flex flex-col gap-4">
+        <div className="flex justify-between items-center bg-white dark:bg-stone-900 p-4 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-sm transition-colors">
+          <div className="flex items-center gap-3">
+            <TooltipWrapper text="Panel Kendali Utama">
+              <div className="w-10 h-10 bg-red-700 rounded-xl flex items-center justify-center text-white shadow-lg shadow-red-900/20">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+              </div>
+            </TooltipWrapper>
+            <div>
+              <h2 className="text-xs font-black uppercase tracking-widest text-stone-800 dark:text-white">Control Center</h2>
+              <p className="text-[9px] text-stone-400 dark:text-stone-500 font-bold uppercase tracking-tighter">Status Cloud: <span className={!!settings.googleScriptUrl ? 'text-green-600' : 'text-red-500'}>{!!settings.googleScriptUrl ? 'Tersambung' : 'Terputus'}</span></p>
             </div>
-          </TooltipWrapper>
-          <div>
-            <h2 className="text-xs font-black uppercase tracking-widest text-stone-800 dark:text-white">Control Center</h2>
-            <p className="text-[9px] text-stone-400 dark:text-stone-500 font-bold uppercase tracking-tighter">Status Cloud: <span className={!!settings.googleScriptUrl ? 'text-green-600' : 'text-red-500'}>{!!settings.googleScriptUrl ? 'Tersambung' : 'Terputus'}</span></p>
           </div>
+          <TooltipWrapper text="Keluar dari Sesi Admin">
+            <button onClick={onLogout} className="px-5 py-2.5 bg-stone-50 dark:bg-stone-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-stone-500 dark:text-stone-400 hover:text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Keluar</button>
+          </TooltipWrapper>
         </div>
-        <div className="flex gap-4 items-center">
+
+        <div className="flex flex-wrap gap-4 items-center px-1">
           {stats.total > 0 && (
             <TooltipWrapper text="Ekspor Semua Data ke CSV">
               <button 
                 onClick={handleExportCSV}
-                className="px-5 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all hover:bg-stone-200 dark:hover:bg-stone-700 active:scale-95 flex items-center gap-2"
+                className="px-6 py-3 bg-accent text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-accent/20 hover:scale-105 active:scale-95 flex items-center gap-3"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                Unduh Data
+                Unduh Semua Data
               </button>
             </TooltipWrapper>
           )}
+          
           {stats.unsynced > 0 && (
-            <div className="flex flex-col items-end gap-1.5">
+            <div className="flex flex-col items-start gap-1.5">
                <button 
                 onClick={handleSyncAll} 
                 disabled={isSyncingAll || !settings.googleScriptUrl}
-                className="px-5 py-2.5 bg-accent text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-accent/20 hover:scale-105 active:scale-95 flex items-center gap-2"
+                className="px-6 py-3 bg-accent text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-accent/20 hover:scale-105 active:scale-95 flex items-center gap-3 border border-white/10"
               >
-                {isSyncingAll ? 'Sinkronisasi...' : `Sinkron ${stats.unsynced} Data`}
+                {isSyncingAll ? (
+                  <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                )}
+                {isSyncingAll ? 'Sinkronisasi...' : `Sinkron ${stats.unsynced} Data ke Cloud`}
               </button>
               {isSyncingAll && (
                 <div className="w-full h-1 bg-stone-100 dark:bg-stone-800 rounded-full overflow-hidden">
@@ -389,9 +429,6 @@ function doPost(e) {
               )}
             </div>
           )}
-          <TooltipWrapper text="Keluar dari Sesi Admin">
-            <button onClick={onLogout} className="px-5 py-2.5 bg-stone-50 dark:bg-stone-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-stone-500 dark:text-stone-400 hover:text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Keluar</button>
-          </TooltipWrapper>
         </div>
       </div>
 
@@ -599,7 +636,7 @@ function doPost(e) {
           <div className="bg-white dark:bg-stone-900 w-full max-w-4xl rounded-[3rem] shadow-2xl border border-stone-200 dark:border-stone-800 flex flex-col max-h-[90vh] transition-colors">
             <div className="p-10 border-b border-stone-50 dark:border-stone-800 flex justify-between items-center bg-stone-50/30 dark:bg-stone-950/30">
               <div>
-                <h3 className="text-2xl font-black uppercase tracking-tighter text-stone-800 dark:text-white">Cloud Backend V17</h3>
+                <h3 className="text-2xl font-black uppercase tracking-tighter text-stone-800 dark:text-white">Cloud Backend V17.5</h3>
                 <p className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase mt-1 tracking-widest">Gunakan kode ini di Google Apps Script untuk menghubungkan form ke spreadsheet.</p>
               </div>
               <button onClick={() => setShowScriptModal(false)} className="w-12 h-12 flex items-center justify-center bg-stone-100 dark:bg-stone-800 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-2xl transition-all dark:text-white">✕</button>
@@ -611,7 +648,7 @@ function doPost(e) {
                   <button onClick={() => { navigator.clipboard.writeText(generateAppsScriptCode()); alert("Kode Tersalin!"); }} className="px-4 py-2 bg-red-700 text-white text-[9px] font-black uppercase rounded-xl hover:scale-105 transition-all shadow-lg shadow-red-900/20">Salin Kode</button>
                 </div>
                 <div className="text-[11px] text-stone-500 dark:text-stone-400 font-medium space-y-2 leading-relaxed bg-amber-500/5 p-6 rounded-2xl border border-amber-500/10">
-                  <p className="font-black text-amber-600 mb-2">PENTING - AGAR EMAIL TERKIRIM:</p>
+                  <p className="font-black text-amber-600 mb-2 underline">⚠️ WAJIB DIIKUTI (AGAR DATA MASUK & EMAIL TERKIRIM):</p>
                   <p>1. Buka <strong>Google Sheets</strong> Anda.</p>
                   <p>2. Klik <strong>Extensions</strong> &gt; <strong>Apps Script</strong>.</p>
                   <p>3. Hapus semua kode bawaan dan tempel kode di bawah ini.</p>
@@ -620,7 +657,8 @@ function doPost(e) {
                   <p>6. Set "Execute as" ke: <strong>Me (Email Anda)</strong>.</p>
                   <p>7. Set "Who has access" ke: <strong>Anyone</strong>.</p>
                   <p>8. Klik <strong>Deploy</strong>. Anda akan diminta <strong>Authorize Access</strong>. Klik "Review Permissions", pilih akun Google Anda, klik "Advanced", lalu klik "Go to ... (unsafe)" dan klik "Allow".</p>
-                  <p>9. Salin URL Web App (berakhir dengan /exec) dan tempel di pengaturan dashboard ini.</p>
+                  <p className="font-bold">9. Salin URL Web App (berakhir dengan /exec) dan tempel di pengaturan dashboard ini.</p>
+                  <p className="text-[10px] mt-4 opacity-70 italic">*Jika data tidak masuk, pastikan Anda telah melewati layar peringatan Google dengan klik "Advanced" -> "Go to Project (Unsafe)".</p>
                 </div>
                 <pre className="p-8 bg-stone-900 dark:bg-stone-950 text-green-400 rounded-3xl text-[10px] font-mono overflow-x-auto leading-relaxed h-[400px] border border-stone-800 dark:border-stone-800">
                   {generateAppsScriptCode()}

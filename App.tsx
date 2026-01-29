@@ -167,9 +167,12 @@ const App: React.FC = () => {
             statusTriggers: {}
           };
 
+          // Strip identity image from cloud payload to avoid cell limits and timeouts
+          const { identityFile, ...cloudReg } = newReg;
+
           const payload = { 
             action: 'NEW_REGISTRATION', 
-            registration: newReg, 
+            registration: cloudReg, 
             adminEmail: settings.adminEmail || DEFAULT_ADMIN_EMAIL,
             notificationPrefs: notificationPrefs
           };
