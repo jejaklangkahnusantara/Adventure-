@@ -61,6 +61,7 @@ const App: React.FC = () => {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [formConfig, setFormConfig] = useState<FormConfig>(defaultFormConfig);
+  const [adminUserInput, setAdminUserInput] = useState('');
   const [adminPassInput, setAdminPassInput] = useState('');
   const [keepHistory, setKeepHistory] = useState(false);
 
@@ -140,11 +141,25 @@ const App: React.FC = () => {
       };
 
       if (settings?.googleScriptUrl) {
+        // Notification preferences are now dynamically loaded from settings
+        const notificationPrefs = settings.notificationPrefs || {
+          notifyAdminOnNew: true,
+          notifyUserOnNew: true,
+          statusTriggers: {}
+        };
+
+        const payload = { 
+          action: 'NEW_REGISTRATION', 
+          registration: newReg, 
+          adminEmail: settings.adminEmail || DEFAULT_ADMIN_EMAIL,
+          notificationPrefs: notificationPrefs
+        };
+
         await fetch(settings.googleScriptUrl.trim(), {
           method: 'POST',
           mode: 'no-cors',
           headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({ action: 'NEW_REGISTRATION', registration: newReg, adminEmail: settings.adminEmail || DEFAULT_ADMIN_EMAIL })
+          body: JSON.stringify(payload)
         });
       }
 
@@ -159,6 +174,23 @@ const App: React.FC = () => {
       setSubmitError('Terjadi gangguan jaringan.');
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleAdminLogin = () => {
+    const settingsStr = localStorage.getItem(SETTINGS_KEY);
+    const settings = settingsStr ? JSON.parse(settingsStr) : { adminUsername: 'Jejak Langkah', adminPassword: 'JejakLangkah25' };
+    
+    const targetUser = settings.adminUsername || 'Jejak Langkah';
+    const targetPass = settings.adminPassword || 'JejakLangkah25';
+
+    if (adminUserInput === targetUser && adminPassInput === targetPass) {
+      setIsAdminAuthenticated(true);
+      sessionStorage.setItem(ADMIN_AUTH_KEY, 'true');
+      setAdminPassInput('');
+      setAdminUserInput('');
+    } else {
+      alert('Username atau Password salah!');
     }
   };
 
@@ -324,26 +356,38 @@ const App: React.FC = () => {
         {activeTab === 'admin' && (
           <div className="animate-in fade-in duration-700">
             {!isAdminAuthenticated ? (
-              <div className={`max-w-md mx-auto p-12 rounded-[3.5rem] border text-center shadow-2xl space-y-10 transition-all duration-500 ${isDarkMode ? 'bg-slate-900/60 border-stone-800' : 'bg-white border-stone-100'}`}>
+              <div className={`max-w-md mx-auto p-12 rounded-[3.5rem] border text-center shadow-2xl space-y-8 transition-all duration-500 ${isDarkMode ? 'bg-slate-900/60 border-stone-800' : 'bg-white border-stone-100'}`}>
                 <div className="w-20 h-20 bg-accent/10 rounded-[2rem] flex items-center justify-center mx-auto text-accent">
                   <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                 </div>
                 <div>
                   <h2 className="text-sm font-black uppercase tracking-[0.3em] mb-2">Admin Portal</h2>
-                  <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest leading-relaxed">Masukkan kode otorisasi sistem untuk mengakses data peserta.</p>
+                  <p className="text-[10px] font-bold text-stone-500 uppercase tracking-widest leading-relaxed">Masukkan kredensial administrator untuk akses kontrol sistem.</p>
                 </div>
-                <input 
-                  type="password" 
-                  value={adminPassInput} 
-                  onChange={(e) => setAdminPassInput(e.target.value)}
-                  placeholder="••••••••" 
-                  className={`w-full px-6 py-5 border-2 rounded-[1.8rem] text-center text-2xl tracking-[0.5em] outline-none transition-all duration-300 ${isDarkMode ? 'bg-midnight border-stone-800 text-white focus:border-accent' : 'bg-stone-50 border-stone-200 focus:border-accent'}`}
-                />
+                
+                <div className="space-y-4">
+                  <input 
+                    type="text" 
+                    value={adminUserInput} 
+                    onChange={(e) => setAdminUserInput(e.target.value)}
+                    placeholder="Username" 
+                    className={`w-full px-6 py-4 border-2 rounded-[1.5rem] text-center font-bold text-sm outline-none transition-all duration-300 ${isDarkMode ? 'bg-midnight border-stone-800 text-white focus:border-accent' : 'bg-stone-50 border-stone-200 focus:border-accent'}`}
+                  />
+                  <input 
+                    type="password" 
+                    value={adminPassInput} 
+                    onChange={(e) => setAdminPassInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()}
+                    placeholder="Password" 
+                    className={`w-full px-6 py-4 border-2 rounded-[1.5rem] text-center font-bold text-sm outline-none transition-all duration-300 ${isDarkMode ? 'bg-midnight border-stone-800 text-white focus:border-accent' : 'bg-stone-50 border-stone-200 focus:border-accent'}`}
+                  />
+                </div>
+
                 <button 
-                  onClick={() => adminPassInput === 'admin123' ? setIsAdminAuthenticated(true) : alert('Akses Ditolak!')} 
+                  onClick={handleAdminLogin}
                   className="w-full py-5 bg-stone-900 dark:bg-accent text-white font-black text-[11px] uppercase tracking-[0.3em] rounded-[1.8rem] shadow-xl active:scale-95 transition-all"
                 >
-                  Buka Panel
+                  Otorisasi Sekarang
                 </button>
               </div>
             ) : (

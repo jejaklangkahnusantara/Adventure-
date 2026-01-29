@@ -26,7 +26,8 @@ const SETTINGS_KEY = 'jejak_langkah_admin_settings';
 
 const defaultSettings: AdminSettings = {
   adminEmail: 'jejaklangkah.nusantara.id@gmail.com',
-  adminPassword: 'admin123',
+  adminUsername: 'Jejak Langkah',
+  adminPassword: 'JejakLangkah25',
   googleScriptUrl: '',
   notifyUser: true,
   notificationPrefs: {
@@ -73,6 +74,7 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onSett
   const [dateStart, setDateStart] = useState('');
   const [dateEnd, setDateEnd] = useState('');
   const [settings, setSettings] = useState<AdminSettings>(defaultSettings);
+  const [originalSettings, setOriginalSettings] = useState<AdminSettings>(defaultSettings);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [showScriptModal, setShowScriptModal] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
@@ -81,9 +83,15 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onSett
     const saved = localStorage.getItem(SETTINGS_KEY);
     if (saved) {
       const parsed = JSON.parse(saved);
-      setSettings({ ...defaultSettings, ...parsed });
+      const merged = { ...defaultSettings, ...parsed };
+      setSettings(merged);
+      setOriginalSettings(merged);
     }
   }, []);
+
+  const isDirty = useMemo(() => {
+    return JSON.stringify(settings) !== JSON.stringify(originalSettings);
+  }, [settings, originalSettings]);
 
   const handleSaveSettings = (newSettings?: AdminSettings) => {
     const s = newSettings || settings;
@@ -92,6 +100,7 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onSett
     onSettingsUpdate?.(s);
     setTimeout(() => {
       setSaveStatus('saved');
+      setOriginalSettings(s);
       setTimeout(() => setSaveStatus('idle'), 2000);
     }, 800);
   };
@@ -159,7 +168,7 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onSett
 
   const generateAppsScriptCode = () => {
     return `/**
- * BACKEND JEJAK LANGKAH ADVENTURE (V15 - SMART SYNC & NOTIF)
+ * BACKEND JEJAK LANGKAH ADVENTURE (V15 - AUTO-EMAIL SYSTEM)
  * PENTING: Deploy sebagai Web App, Access: "Anyone"
  */
 
@@ -173,39 +182,70 @@ function doPost(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheets()[0];
     
+    // Header setup
     if (sheet.getLastRow() == 0) {
       sheet.appendRow(["TIMESTAMP", "ID_BOOKING", "NAMA_LENGKAP", "WHATSAPP", "EMAIL", "GUNUNG", "GENDER", "TGL_MULAI", "TGL_SELESAI", "TRIP", "PAKET", "ALAMAT", "STATUS"]);
-      sheet.getRange(1, 1, 1, 13).setBackground("#b91c1c").setFontColor("white").setFontWeight("bold");
+      sheet.getRange(1, 1, 1, 13).setBackground("#e11d48").setFontColor("white").setFontWeight("bold");
     }
 
     if (data.action === "TEST_CONNECTION") {
-      try { MailApp.sendEmail(data.adminEmail, "✅ CLOUD CONNECTED", "Sistem Jejak Langkah Berhasil Terhubung V15 pada " + data.timestamp); } catch(f) {}
+      try { 
+        MailApp.sendEmail(data.adminEmail, "✅ CLOUD CONNECTED - Jejak Langkah", "Sistem Jejak Langkah Adventure Berhasil Terhubung pada " + data.timestamp); 
+      } catch(f) {}
       return ContentService.createTextOutput("success").setMimeType(ContentService.MimeType.TEXT);
     }
 
     if (data.action === "NEW_REGISTRATION") {
       var r = data.registration;
       var prefs = data.notificationPrefs || {};
-      sheet.appendRow([r.timestamp, "ID_"+r.id.toString().slice(-6), r.fullName, "'" + r.whatsapp, r.email, r.mountain, r.gender || "-", r.startDate, r.endDate, r.tripType, r.packageCategory, r.address, r.status]);
+      var bookingId = "#JL" + r.id.toString().slice(-6);
       
-      if (prefs.notifyAdminOnNew && data.adminEmail) {
-        try { MailApp.sendEmail(data.adminEmail, "🚨 PENDAFTARAN BARU: " + r.fullName, "Ada pendaftaran baru untuk ekspedisi " + r.mountain); } catch(f) {}
+      sheet.appendRow([r.timestamp, bookingId, r.fullName, "'" + r.whatsapp, r.email, r.mountain, r.gender || "-", r.startDate, r.endDate, r.tripType, r.packageCategory, r.address, r.status]);
+      
+      // EMAIL OTOMATIS KE PESERTA
+      if (prefs.notifyUserOnNew && r.email) {
+        var userSubject = "Konfirmasi Pendaftaran Ekspedisi: " + r.mountain + " [" + bookingId + "]";
+        var userBody = "Halo " + r.fullName + ",\\n\\n" +
+                      "Terima kasih telah mendaftar ekspedisi bersama Jejak Langkah Adventure.\\n\\n" +
+                      "DETAIL PENDAFTARAN:\\n" +
+                      "------------------------------------\\n" +
+                      "Nomor Booking: " + bookingId + "\\n" +
+                      "Tujuan: " + r.mountain + "\\n" +
+                      "Tanggal Trip: " + r.startDate + "\\n" +
+                      "Tipe Trip: " + r.tripType + "\\n" +
+                      "------------------------------------\\n\\n" +
+                      "Data Anda telah kami terima dan saat ini sedang menunggu verifikasi admin. Kami akan memberikan update status melalui email ini secara berkala.\\n\\n" +
+                      "Siapkan fisik dan perlengkapan Anda! Sampai jumpa di puncak!\\n\\n" +
+                      "Salam Petualang,\\nJejak Langkah Adventure Cloud System";
+        
+        try { MailApp.sendEmail(r.email, userSubject, userBody); } catch(f) {}
       }
 
-      if (prefs.notifyUserOnNew && r.email) {
-        try { MailApp.sendEmail(r.email, "Konfirmasi Pendaftaran: " + r.mountain, "Halo " + r.fullName + ",\\n\\nTerima kasih telah mendaftar ekspedisi ke " + r.mountain + " bersama Jejak Langkah Adventure.\\n\\nNomor Booking: #" + r.id.toString().slice(-6) + "\\n\\nSalam Petualang."); } catch(f) {}
+      // NOTIFIKASI KE ADMIN
+      if (prefs.notifyAdminOnNew && data.adminEmail) {
+        var adminSubject = "🚨 PENDAFTARAN BARU: " + r.fullName + " (" + r.mountain + ")";
+        var adminBody = "Halo Admin,\\n\\nAda pendaftaran ekspedisi baru masuk.\\n\\n" +
+                       "Nama: " + r.fullName + "\\n" +
+                       "WA: " + r.whatsapp + "\\n" +
+                       "Tujuan: " + r.mountain + "\\n" +
+                       "Booking ID: " + bookingId + "\\n\\n" +
+                       "Segera lakukan verifikasi di Admin Dashboard.";
+                       
+        try { MailApp.sendEmail(data.adminEmail, adminSubject, adminBody); } catch(f) {}
       }
+
       return ContentService.createTextOutput("success").setMimeType(ContentService.MimeType.TEXT);
     }
 
+    // Logic for STATUS_UPDATE...
     if (data.action === "STATUS_UPDATE") {
       var r = data.registration;
-      var searchId = "ID_" + r.id.toString().slice(-6);
+      var bookingId = "#JL" + r.id.toString().slice(-6);
       var values = sheet.getDataRange().getValues();
       var foundRow = -1;
       
       for (var i = 1; i < values.length; i++) {
-        if (values[i][1] == searchId) {
+        if (values[i][1] == bookingId) {
           foundRow = i + 1;
           break;
         }
@@ -213,13 +253,18 @@ function doPost(e) {
       
       if (foundRow !== -1) {
         sheet.getRange(foundRow, 13).setValue(data.newStatus);
-      }
-
-      if (data.shouldNotify && r.email) {
-         try {
-           MailApp.sendEmail(r.email, "Update Status Pendakian: " + data.newStatus, 
-             "Halo " + r.fullName + ",\\n\\nStatus pendaftaran Anda untuk ekspedisi " + r.mountain + " telah diperbarui menjadi: " + data.newStatus + ".\\n\\nTerima kasih.\\nJejak Langkah Adventure");
-         } catch(f) {}
+        
+        if (data.shouldNotify && r.email) {
+          var statusSubject = "Update Status Ekspedisi: " + data.newStatus + " [" + bookingId + "]";
+          var statusBody = "Halo " + r.fullName + ",\\n\\n" +
+                          "Status pendaftaran Anda untuk ekspedisi " + r.mountain + " telah diperbarui.\\n\\n" +
+                          "STATUS SAAT INI: " + data.newStatus + "\\n" +
+                          "Booking ID: " + bookingId + "\\n\\n" +
+                          "Terima kasih telah mempercayakan petualangan Anda bersama kami.\\n\\n" +
+                          "Salam Petualang,\\nJejak Langkah Adventure";
+          
+          try { MailApp.sendEmail(r.email, statusSubject, statusBody); } catch(f) {}
+        }
       }
       return ContentService.createTextOutput("success").setMimeType(ContentService.MimeType.TEXT);
     }
@@ -236,7 +281,6 @@ function doPost(e) {
     return data.filter(item => {
       const matchSearch = !search || item.fullName.toLowerCase().includes(search.toLowerCase()) || item.whatsapp.includes(search);
       
-      // Date range filtering
       let matchDate = true;
       if (dateStart && item.startDate < dateStart) matchDate = false;
       if (dateEnd && item.startDate > dateEnd) matchDate = false;
@@ -346,6 +390,30 @@ function doPost(e) {
         <div className="max-w-4xl space-y-8 animate-in slide-in-from-bottom-4 duration-500 pb-10">
           <section className="bg-white dark:bg-stone-900 rounded-[2.5rem] border border-stone-100 dark:border-stone-800 shadow-xl overflow-hidden transition-colors">
             <div className="p-8 border-b border-stone-50 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 flex items-center gap-4">
+              <div className="p-2 bg-stone-100 dark:bg-stone-800 rounded-xl">
+                <svg className="w-5 h-5 text-stone-600 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+              </div>
+              <div>
+                <h4 className="text-[10px] font-black text-stone-400 dark:text-stone-500 uppercase tracking-[0.2em]">Otorisasi Admin</h4>
+                <p className="text-[9px] font-bold text-stone-500 dark:text-stone-400 uppercase">Kredensial Login Administrator</p>
+              </div>
+            </div>
+            <div className="p-8 space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-stone-500 dark:text-stone-400 uppercase tracking-widest px-1">Admin Username</label>
+                  <input type="text" value={settings.adminUsername} onChange={(e) => setSettings(p => ({ ...p, adminUsername: e.target.value }))} className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-2xl text-xs font-bold text-stone-800 dark:text-white focus:ring-4 focus:ring-red-500/10 transition-all outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-stone-500 dark:text-stone-400 uppercase tracking-widest px-1">Admin Password</label>
+                  <input type="password" value={settings.adminPassword} onChange={(e) => setSettings(p => ({ ...p, adminPassword: e.target.value }))} className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-2xl text-xs font-bold text-stone-800 dark:text-white focus:ring-4 focus:ring-red-500/10 transition-all outline-none" />
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="bg-white dark:bg-stone-900 rounded-[2.5rem] border border-stone-100 dark:border-stone-800 shadow-xl overflow-hidden transition-colors">
+            <div className="p-8 border-b border-stone-50 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 flex items-center gap-4">
               <TooltipWrapper text="Konfigurasi Database Spreadsheet">
                 <div className="p-2 bg-stone-100 dark:bg-stone-800 rounded-xl">
                   <svg className="w-5 h-5 text-stone-600 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
@@ -363,7 +431,7 @@ function doPost(e) {
                   <input type="text" value={settings.googleScriptUrl} onChange={(e) => setSettings(p => ({ ...p, googleScriptUrl: e.target.value }))} placeholder="https://script.google.com/macros/s/.../exec" className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-2xl text-xs font-bold text-stone-800 dark:text-white focus:ring-4 focus:ring-red-500/10 transition-all outline-none" />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-stone-500 dark:text-stone-400 uppercase tracking-widest px-1">Email Admin</label>
+                  <label className="text-[10px] font-black text-stone-500 dark:text-stone-400 uppercase tracking-widest px-1">Email Admin Kontraktor</label>
                   <input type="email" value={settings.adminEmail} onChange={(e) => setSettings(p => ({ ...p, adminEmail: e.target.value }))} className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-2xl text-xs font-bold text-stone-800 dark:text-white focus:ring-4 focus:ring-red-500/10 transition-all outline-none" />
                 </div>
               </div>
@@ -426,11 +494,16 @@ function doPost(e) {
             </div>
           </section>
 
-          <div className="flex gap-4 pt-4">
-            <button onClick={() => handleSaveSettings()} className="flex-1 py-5 bg-red-700 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-[0.3em] shadow-2xl hover:scale-[1.01] active:scale-95 transition-all">
-              {saveStatus === 'saving' ? 'Memproses...' : saveStatus === 'saved' ? 'Sistem Terupdate!' : 'Simpan Perubahan'}
-            </button>
-          </div>
+          {isDirty && (
+            <div className="flex gap-4 pt-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <button 
+                onClick={() => handleSaveSettings()} 
+                className="flex-1 py-5 bg-red-700 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-[0.3em] shadow-2xl hover:scale-[1.01] active:scale-95 transition-all"
+              >
+                {saveStatus === 'saving' ? 'Memproses...' : saveStatus === 'saved' ? 'Sistem Terupdate!' : 'Simpan Perubahan'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -438,7 +511,6 @@ function doPost(e) {
         <div className="bg-white dark:bg-stone-900 rounded-[2.5rem] border border-stone-200 dark:border-stone-800 shadow-xl overflow-hidden transition-colors">
            <div className="p-6 border-b border-stone-50 dark:border-stone-800 flex flex-col gap-6 bg-stone-50/50 dark:bg-stone-800/30">
              
-             {/* Filter & Search Controls */}
              <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                <div className="md:col-span-5 relative">
                   <span className="text-[8px] font-black uppercase tracking-widest text-stone-400 block mb-1.5 ml-1">Cari Nama / WhatsApp</span>
@@ -480,7 +552,7 @@ function doPost(e) {
                     <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">ID & Waktu Reg</th>
                     <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Peserta</th>
                     <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Tujuan & Tgl Trip</th>
-                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Status</th>
+                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Status Kontrol</th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-stone-50 dark:divide-stone-800">
@@ -507,16 +579,19 @@ function doPost(e) {
                         </div>
                      </td>
                      <td className="px-8 py-6">
-                        <select 
-                          value={reg.status} 
-                          onChange={(e) => onUpdateStatus?.(reg.id, e.target.value)}
-                          className="text-[9px] font-black uppercase bg-stone-100 dark:bg-stone-800 px-3 py-1.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-red-500 cursor-pointer dark:text-white"
-                        >
-                           <option value="Menunggu Verifikasi">Pending</option>
-                           <option value="Terverifikasi">Terverifikasi</option>
-                           <option value="Diproses">Diproses</option>
-                           <option value="Dibatalkan">Dibatalkan</option>
-                        </select>
+                        <div className="flex items-center gap-2">
+                           <span className={`w-2 h-2 rounded-full ${reg.status === 'Terverifikasi' ? 'bg-green-500' : reg.status === 'Dibatalkan' ? 'bg-red-500' : 'bg-amber-500'}`}></span>
+                           <select 
+                             value={reg.status} 
+                             onChange={(e) => onUpdateStatus?.(reg.id, e.target.value)}
+                             className="text-[9px] font-black uppercase bg-stone-100 dark:bg-stone-800 px-3 py-1.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-red-500 cursor-pointer dark:text-white"
+                           >
+                              <option value="Menunggu Verifikasi">Pending</option>
+                              <option value="Terverifikasi">Approve</option>
+                              <option value="Diproses">Process</option>
+                              <option value="Dibatalkan">Reject</option>
+                           </select>
+                        </div>
                      </td>
                    </tr>
                  ))}

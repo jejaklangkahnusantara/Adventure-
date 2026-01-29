@@ -31,6 +31,7 @@ export interface FormConfig {
 
 export interface AdminSettings {
   adminEmail: string;
+  adminUsername?: string;
   adminPassword?: string;
   googleScriptUrl?: string;
   notifyUser: boolean;
