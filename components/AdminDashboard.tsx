@@ -2,6 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Registration, AdminSettings, FormConfig } from '../types';
 import * as XLSX from 'xlsx';
+import Input from './Input';
 import { 
   BarChart, 
   Bar, 
@@ -16,6 +17,7 @@ import {
 interface DashboardProps {
   data: Registration[];
   onUpdateStatus?: (id: number, newStatus: string) => void;
+  onUpdateRegistrations?: (updated: Registration[]) => void;
   onSettingsUpdate?: (settings: AdminSettings) => void;
   onLogout?: () => void;
   onClearAll?: () => void;
@@ -68,7 +70,7 @@ const TooltipWrapper: React.FC<{ children: React.ReactNode; text: string }> = ({
   </div>
 );
 
-const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onSettingsUpdate, onLogout, onClearAll, isDarkMode }) => {
+const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onUpdateRegistrations, onSettingsUpdate, onLogout, onClearAll, isDarkMode }) => {
   const [activeSubTab, setActiveTab] = useState<'overview' | 'table' | 'settings'>('overview');
   const [search, setSearch] = useState('');
   const [dateStart, setDateStart] = useState('');
@@ -78,6 +80,8 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onSett
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [showScriptModal, setShowScriptModal] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [syncingId, setSyncingId] = useState<number | null>(null);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem(SETTINGS_KEY);
@@ -105,6 +109,57 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onSett
     }, 800);
   };
 
+  const syncToCloud = async (reg: Registration) => {
+    if (!settings.googleScriptUrl) return false;
+    try {
+      await fetch(settings.googleScriptUrl.trim(), {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'NEW_REGISTRATION',
+          registration: reg,
+          adminEmail: settings.adminEmail,
+          notificationPrefs: settings.notificationPrefs
+        })
+      });
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  };
+
+  const handleManualSync = async (id: number) => {
+    setSyncingId(id);
+    const reg = data.find(r => r.id === id);
+    if (reg) {
+      const success = await syncToCloud(reg);
+      if (success && onUpdateRegistrations) {
+        onUpdateRegistrations(data.map(r => r.id === id ? { ...r, isSynced: true } : r));
+      }
+    }
+    setSyncingId(null);
+  };
+
+  const handleSyncAll = async () => {
+    if (!settings.googleScriptUrl) return alert("URL Cloud belum diatur!");
+    setIsSyncingAll(true);
+    const unsynced = data.filter(r => !r.isSynced);
+    
+    let updatedData = [...data];
+    for (const reg of unsynced) {
+      const success = await syncToCloud(reg);
+      if (success) {
+        updatedData = updatedData.map(r => r.id === reg.id ? { ...r, isSynced: true } : r);
+      }
+    }
+    
+    onUpdateRegistrations?.(updatedData);
+    setIsSyncingAll(false);
+    alert("Proses sinkronisasi selesai.");
+  };
+
   const handleTestConnection = async () => {
     const url = settings.googleScriptUrl?.trim();
     if (!url) return alert("Masukkan URL Google Script terlebih dahulu!");
@@ -130,19 +185,6 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onSett
     }
   };
 
-  const toggleStatusTrigger = (status: string) => {
-    setSettings(prev => ({
-      ...prev,
-      notificationPrefs: {
-        ...prev.notificationPrefs,
-        statusTriggers: {
-          ...prev.notificationPrefs.statusTriggers,
-          [status]: !prev.notificationPrefs.statusTriggers[status]
-        }
-      }
-    }));
-  };
-
   const chartData = useMemo(() => {
     const mountainCounts: Record<string, number> = {};
     const allMountains = settings.formConfig.mountains;
@@ -163,12 +205,12 @@ const AdminDashboard: React.FC<DashboardProps> = ({ data, onUpdateStatus, onSett
   }, [data, settings.formConfig.mountains]);
 
   const stats = useMemo(() => {
-    return { total: data.length };
+    return { total: data.length, unsynced: data.filter(r => !r.isSynced).length };
   }, [data]);
 
   const generateAppsScriptCode = () => {
     return `/**
- * BACKEND JEJAK LANGKAH ADVENTURE (V15 - AUTO-EMAIL SYSTEM)
+ * BACKEND JEJAK LANGKAH ADVENTURE (V16 - CLOUD SYNC)
  * PENTING: Deploy sebagai Web App, Access: "Anyone"
  */
 
@@ -182,93 +224,43 @@ function doPost(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheets()[0];
     
-    // Header setup
     if (sheet.getLastRow() == 0) {
-      sheet.appendRow(["TIMESTAMP", "ID_BOOKING", "NAMA_LENGKAP", "WHATSAPP", "EMAIL", "GUNUNG", "GENDER", "TGL_MULAI", "TGL_SELESAI", "TRIP", "PAKET", "ALAMAT", "STATUS"]);
-      sheet.getRange(1, 1, 1, 13).setBackground("#e11d48").setFontColor("white").setFontWeight("bold");
+      sheet.appendRow(["TIMESTAMP", "ID_BOOKING", "NAMA_LENGKAP", "WHATSAPP", "EMAIL", "GUNUNG", "TGL_MULAI", "TGL_SELESAI", "TRIP", "PAKET", "ALAMAT", "STATUS"]);
+      sheet.getRange(1, 1, 1, 12).setBackground("#e11d48").setFontColor("white").setFontWeight("bold");
     }
 
     if (data.action === "TEST_CONNECTION") {
-      try { 
-        MailApp.sendEmail(data.adminEmail, "✅ CLOUD CONNECTED - Jejak Langkah", "Sistem Jejak Langkah Adventure Berhasil Terhubung pada " + data.timestamp); 
-      } catch(f) {}
+      try { MailApp.sendEmail(data.adminEmail, "✅ CLOUD CONNECTED - Jejak Langkah", "Sistem Jejak Langkah Adventure Berhasil Terhubung pada " + data.timestamp); } catch(f) {}
       return ContentService.createTextOutput("success").setMimeType(ContentService.MimeType.TEXT);
     }
 
     if (data.action === "NEW_REGISTRATION") {
       var r = data.registration;
-      var prefs = data.notificationPrefs || {};
-      var bookingId = "#JL" + r.id.toString().slice(-6);
+      var bookingId = "JL-" + r.id.toString().slice(-6).toUpperCase();
       
-      sheet.appendRow([r.timestamp, bookingId, r.fullName, "'" + r.whatsapp, r.email, r.mountain, r.gender || "-", r.startDate, r.endDate, r.tripType, r.packageCategory, r.address, r.status]);
-      
-      // EMAIL OTOMATIS KE PESERTA
-      if (prefs.notifyUserOnNew && r.email) {
-        var userSubject = "Konfirmasi Pendaftaran Ekspedisi: " + r.mountain + " [" + bookingId + "]";
-        var userBody = "Halo " + r.fullName + ",\\n\\n" +
-                      "Terima kasih telah mendaftar ekspedisi bersama Jejak Langkah Adventure.\\n\\n" +
-                      "DETAIL PENDAFTARAN:\\n" +
-                      "------------------------------------\\n" +
-                      "Nomor Booking: " + bookingId + "\\n" +
-                      "Tujuan: " + r.mountain + "\\n" +
-                      "Tanggal Trip: " + r.startDate + "\\n" +
-                      "Tipe Trip: " + r.tripType + "\\n" +
-                      "------------------------------------\\n\\n" +
-                      "Data Anda telah kami terima dan saat ini sedang menunggu verifikasi admin. Kami akan memberikan update status melalui email ini secara berkala.\\n\\n" +
-                      "Siapkan fisik dan perlengkapan Anda! Sampai jumpa di puncak!\\n\\n" +
-                      "Salam Petualang,\\nJejak Langkah Adventure Cloud System";
-        
-        try { MailApp.sendEmail(r.email, userSubject, userBody); } catch(f) {}
-      }
-
-      // NOTIFIKASI KE ADMIN
-      if (prefs.notifyAdminOnNew && data.adminEmail) {
-        var adminSubject = "🚨 PENDAFTARAN BARU: " + r.fullName + " (" + r.mountain + ")";
-        var adminBody = "Halo Admin,\\n\\nAda pendaftaran ekspedisi baru masuk.\\n\\n" +
-                       "Nama: " + r.fullName + "\\n" +
-                       "WA: " + r.whatsapp + "\\n" +
-                       "Tujuan: " + r.mountain + "\\n" +
-                       "Booking ID: " + bookingId + "\\n\\n" +
-                       "Segera lakukan verifikasi di Admin Dashboard.";
-                       
-        try { MailApp.sendEmail(data.adminEmail, adminSubject, adminBody); } catch(f) {}
-      }
-
-      return ContentService.createTextOutput("success").setMimeType(ContentService.MimeType.TEXT);
-    }
-
-    // Logic for STATUS_UPDATE...
-    if (data.action === "STATUS_UPDATE") {
-      var r = data.registration;
-      var bookingId = "#JL" + r.id.toString().slice(-6);
+      // Duplication check
       var values = sheet.getDataRange().getValues();
-      var foundRow = -1;
-      
+      var exists = false;
       for (var i = 1; i < values.length; i++) {
-        if (values[i][1] == bookingId) {
-          foundRow = i + 1;
-          break;
-        }
+        if (values[i][1] == bookingId) { exists = true; break; }
       }
-      
-      if (foundRow !== -1) {
-        sheet.getRange(foundRow, 13).setValue(data.newStatus);
+
+      if (!exists) {
+        sheet.appendRow([r.timestamp, bookingId, r.fullName, "'" + r.whatsapp, r.email, r.mountain, r.startDate, r.endDate, r.tripType, r.packageCategory, r.address, r.status]);
         
-        if (data.shouldNotify && r.email) {
-          var statusSubject = "Update Status Ekspedisi: " + data.newStatus + " [" + bookingId + "]";
-          var statusBody = "Halo " + r.fullName + ",\\n\\n" +
-                          "Status pendaftaran Anda untuk ekspedisi " + r.mountain + " telah diperbarui.\\n\\n" +
-                          "STATUS SAAT INI: " + data.newStatus + "\\n" +
-                          "Booking ID: " + bookingId + "\\n\\n" +
-                          "Terima kasih telah mempercayakan petualangan Anda bersama kami.\\n\\n" +
-                          "Salam Petualang,\\nJejak Langkah Adventure";
-          
-          try { MailApp.sendEmail(r.email, statusSubject, statusBody); } catch(f) {}
-        }
+        // Notifications
+        try {
+          if (data.notificationPrefs.notifyUserOnNew && r.email) {
+            MailApp.sendEmail(r.email, "Konfirmasi Pendaftaran Ekspedisi [" + bookingId + "]", "Halo " + r.fullName + ", pendaftaran Anda untuk " + r.mountain + " telah kami terima.");
+          }
+          if (data.notificationPrefs.notifyAdminOnNew && data.adminEmail) {
+            MailApp.sendEmail(data.adminEmail, "🚨 PENDAFTARAN BARU: " + r.fullName, "Detail: " + r.mountain + " [" + bookingId + "]");
+          }
+        } catch(mailErr) {}
       }
+
       return ContentService.createTextOutput("success").setMimeType(ContentService.MimeType.TEXT);
     }
-
   } catch (err) {
     return ContentService.createTextOutput("Error: " + err.toString()).setMimeType(ContentService.MimeType.TEXT);
   } finally {
@@ -280,43 +272,15 @@ function doPost(e) {
   const filteredData = useMemo(() => {
     return data.filter(item => {
       const matchSearch = !search || item.fullName.toLowerCase().includes(search.toLowerCase()) || item.whatsapp.includes(search);
-      
       let matchDate = true;
       if (dateStart && item.startDate < dateStart) matchDate = false;
       if (dateEnd && item.startDate > dateEnd) matchDate = false;
-
       return matchSearch && matchDate;
     });
   }, [data, search, dateStart, dateEnd]);
 
-  const isConfigured = !!settings.googleScriptUrl;
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-white dark:bg-stone-900 p-4 border border-stone-100 dark:border-stone-800 rounded-2xl shadow-xl">
-          <p className="text-[10px] font-black uppercase text-stone-400 dark:text-stone-500 mb-1 tracking-widest">{label}</p>
-          <p className="text-sm font-black text-red-700 dark:text-red-400 uppercase tracking-tighter">
-            {payload[0].value} Pendaftar
-          </p>
-        </div>
-      );
-    }
-    return null;
-  };
-
   return (
     <div className="flex flex-col gap-8 animate-in fade-in duration-500 pb-20">
-      {!isConfigured && activeSubTab !== 'settings' && (
-        <div className="bg-amber-100 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="w-3 h-3 bg-amber-500 rounded-full animate-ping"></span>
-            <p className="text-[10px] font-black text-amber-800 dark:text-amber-400 uppercase tracking-widest">Peringatan: Cloud Belum Aktif. Data tidak akan masuk ke Spreadsheet.</p>
-          </div>
-          <button onClick={() => setActiveTab('settings')} className="text-[9px] font-black text-amber-900 dark:text-amber-200 underline uppercase">Atur</button>
-        </div>
-      )}
-
       <div className="flex justify-between items-center bg-white dark:bg-stone-900 p-4 rounded-2xl border border-stone-200 dark:border-stone-800 shadow-sm transition-colors">
         <div className="flex items-center gap-3">
           <TooltipWrapper text="Panel Kendali Utama">
@@ -326,221 +290,55 @@ function doPost(e) {
           </TooltipWrapper>
           <div>
             <h2 className="text-xs font-black uppercase tracking-widest text-stone-800 dark:text-white">Control Center</h2>
-            <p className="text-[9px] text-stone-400 dark:text-stone-500 font-bold uppercase tracking-tighter">Status: <span className={isConfigured ? 'text-green-600' : 'text-red-500'}>{isConfigured ? 'Online' : 'Offline'}</span></p>
+            <p className="text-[9px] text-stone-400 dark:text-stone-500 font-bold uppercase tracking-tighter">Status Cloud: <span className={!!settings.googleScriptUrl ? 'text-green-600' : 'text-red-500'}>{!!settings.googleScriptUrl ? 'Tersambung' : 'Terputus'}</span></p>
           </div>
         </div>
-        <TooltipWrapper text="Keluar dari Sesi Admin">
-          <button onClick={onLogout} className="px-5 py-2.5 bg-stone-50 dark:bg-stone-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-stone-500 dark:text-stone-400 hover:text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Keluar</button>
-        </TooltipWrapper>
+        <div className="flex gap-4">
+          {stats.unsynced > 0 && (
+            <button 
+              onClick={handleSyncAll} 
+              disabled={isSyncingAll || !settings.googleScriptUrl}
+              className="px-5 py-2.5 bg-accent text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-accent/20 animate-pulse hover:animate-none flex items-center gap-2"
+            >
+              {isSyncingAll ? 'Sinkronisasi...' : `Sinkron ${stats.unsynced} Data`}
+            </button>
+          )}
+          <TooltipWrapper text="Keluar dari Sesi Admin">
+            <button onClick={onLogout} className="px-5 py-2.5 bg-stone-50 dark:bg-stone-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-stone-500 dark:text-stone-400 hover:text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Keluar</button>
+          </TooltipWrapper>
+        </div>
       </div>
 
       <div className="flex border-b border-stone-200 dark:border-stone-800 gap-8 overflow-x-auto no-scrollbar">
         {[
           { id: 'overview', label: 'Overview' },
           { id: 'table', label: 'Daftar Peserta' },
-          { id: 'settings', label: 'Konfigurasi Sistem' }
+          { id: 'settings', label: 'Konfigurasi' }
         ].map(tab => (
-          <button 
-            key={tab.id} 
-            onClick={() => setActiveTab(tab.id as any)} 
-            className={`pb-4 text-[10px] font-black uppercase tracking-[0.2em] border-b-2 transition-all whitespace-nowrap ${activeSubTab === tab.id ? 'border-red-600 text-red-700 dark:text-red-400' : 'border-transparent text-stone-400 hover:text-stone-600 dark:text-stone-500 dark:hover:text-stone-300'}`}
-          >
-            {tab.label}
-          </button>
+          <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`pb-4 text-[10px] font-black uppercase tracking-[0.2em] border-b-2 transition-all whitespace-nowrap ${activeSubTab === tab.id ? 'border-red-600 text-red-700 dark:text-red-400' : 'border-transparent text-stone-400 hover:text-stone-600 dark:text-stone-500 dark:hover:text-stone-300'}`}>{tab.label}</button>
         ))}
       </div>
-
-      {activeSubTab === 'overview' && (
-        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="grid grid-cols-1 md:grid-cols-1 gap-6">
-            <div className="bg-white dark:bg-stone-900 p-6 rounded-[2rem] border border-stone-100 dark:border-stone-800 shadow-sm flex flex-col gap-2">
-              <span className="text-[10px] font-black text-stone-400 dark:text-stone-500 uppercase tracking-widest">Total Pendaftar Masuk</span>
-              <span className="text-4xl font-black text-stone-800 dark:text-white tracking-tighter">{stats.total} Peserta</span>
-            </div>
-          </div>
-
-          <section className="bg-white dark:bg-stone-900 p-8 rounded-[3rem] border border-stone-100 dark:border-stone-800 shadow-xl space-y-8">
-            <div className="flex justify-between items-end">
-              <div>
-                <h3 className="text-xl font-black uppercase tracking-tighter text-stone-800 dark:text-white leading-none">Popularitas Destinasi</h3>
-                <p className="text-[10px] font-bold text-stone-400 dark:text-stone-500 uppercase tracking-widest mt-2">Distribusi pendaftar per gunung</p>
-              </div>
-            </div>
-            
-            <div className="h-[400px] w-full pt-4">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? "#292524" : "#f1f1f1"} />
-                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 900, fill: isDarkMode ? "#78716c" : "#a8a29e" }} interval={0} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: isDarkMode ? "#78716c" : "#a8a29e" }} />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'transparent' }} />
-                  <Bar dataKey="count" radius={[10, 10, 10, 10]} barSize={40}>
-                    {chartData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={index === 0 ? "#b91c1c" : (isDarkMode ? "#292524" : "#f5f5f4")} className="transition-all duration-300 hover:fill-red-700" />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {activeSubTab === 'settings' && (
-        <div className="max-w-4xl space-y-8 animate-in slide-in-from-bottom-4 duration-500 pb-10">
-          <section className="bg-white dark:bg-stone-900 rounded-[2.5rem] border border-stone-100 dark:border-stone-800 shadow-xl overflow-hidden transition-colors">
-            <div className="p-8 border-b border-stone-50 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 flex items-center gap-4">
-              <div className="p-2 bg-stone-100 dark:bg-stone-800 rounded-xl">
-                <svg className="w-5 h-5 text-stone-600 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-              </div>
-              <div>
-                <h4 className="text-[10px] font-black text-stone-400 dark:text-stone-500 uppercase tracking-[0.2em]">Otorisasi Admin</h4>
-                <p className="text-[9px] font-bold text-stone-500 dark:text-stone-400 uppercase">Kredensial Login Administrator</p>
-              </div>
-            </div>
-            <div className="p-8 space-y-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-stone-500 dark:text-stone-400 uppercase tracking-widest px-1">Admin Username</label>
-                  <input type="text" value={settings.adminUsername} onChange={(e) => setSettings(p => ({ ...p, adminUsername: e.target.value }))} className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-2xl text-xs font-bold text-stone-800 dark:text-white focus:ring-4 focus:ring-red-500/10 transition-all outline-none" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-stone-500 dark:text-stone-400 uppercase tracking-widest px-1">Admin Password</label>
-                  <input type="password" value={settings.adminPassword} onChange={(e) => setSettings(p => ({ ...p, adminPassword: e.target.value }))} className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-2xl text-xs font-bold text-stone-800 dark:text-white focus:ring-4 focus:ring-red-500/10 transition-all outline-none" />
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="bg-white dark:bg-stone-900 rounded-[2.5rem] border border-stone-100 dark:border-stone-800 shadow-xl overflow-hidden transition-colors">
-            <div className="p-8 border-b border-stone-50 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 flex items-center gap-4">
-              <TooltipWrapper text="Konfigurasi Database Spreadsheet">
-                <div className="p-2 bg-stone-100 dark:bg-stone-800 rounded-xl">
-                  <svg className="w-5 h-5 text-stone-600 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                </div>
-              </TooltipWrapper>
-              <div>
-                <h4 className="text-[10px] font-black text-stone-400 dark:text-stone-500 uppercase tracking-[0.2em]">Koneksi Cloud</h4>
-                <p className="text-[9px] font-bold text-stone-500 dark:text-stone-400 uppercase">Integrasi Google Spreadsheet</p>
-              </div>
-            </div>
-            <div className="p-8 space-y-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-stone-500 dark:text-stone-400 uppercase tracking-widest px-1">Web App URL</label>
-                  <input type="text" value={settings.googleScriptUrl} onChange={(e) => setSettings(p => ({ ...p, googleScriptUrl: e.target.value }))} placeholder="https://script.google.com/macros/s/.../exec" className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-2xl text-xs font-bold text-stone-800 dark:text-white focus:ring-4 focus:ring-red-500/10 transition-all outline-none" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-stone-500 dark:text-stone-400 uppercase tracking-widest px-1">Email Admin Kontraktor</label>
-                  <input type="email" value={settings.adminEmail} onChange={(e) => setSettings(p => ({ ...p, adminEmail: e.target.value }))} className="w-full px-5 py-4 bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 rounded-2xl text-xs font-bold text-stone-800 dark:text-white focus:ring-4 focus:ring-red-500/10 transition-all outline-none" />
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-4 pt-4">
-                <button onClick={handleTestConnection} disabled={testStatus === 'sending'} className={`px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 transition-all ${testStatus === 'success' ? 'bg-green-600 text-white' : testStatus === 'error' ? 'bg-red-600 text-white' : 'bg-red-700 text-white hover:scale-105 active:scale-95'}`}>{testStatus === 'sending' ? 'Mengirim...' : testStatus === 'success' ? 'Berhasil Terhubung' : testStatus === 'error' ? 'Koneksi Gagal' : 'Uji Koneksi'}</button>
-                <button onClick={() => setShowScriptModal(true)} className="px-6 py-4 bg-stone-900 dark:bg-stone-800 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">Script Backend</button>
-              </div>
-            </div>
-          </section>
-
-          <section className="bg-white dark:bg-stone-900 rounded-[2.5rem] border border-stone-100 dark:border-stone-800 shadow-xl overflow-hidden transition-colors">
-            <div className="p-8 border-b border-stone-50 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 flex items-center gap-4">
-              <div className="p-2 bg-red-100 dark:bg-red-950/30 rounded-xl">
-                <svg className="w-5 h-5 text-red-600 dark:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-              </div>
-              <div>
-                <h4 className="text-[10px] font-black text-stone-400 dark:text-stone-500 uppercase tracking-[0.2em]">Pengaturan Notifikasi</h4>
-                <p className="text-[9px] font-bold text-stone-500 dark:text-stone-400 uppercase">Konfigurasi Email Otomatis</p>
-              </div>
-            </div>
-            <div className="p-8 space-y-10">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-4">
-                   <h5 className="text-[9px] font-black text-stone-400 dark:text-stone-500/40 uppercase tracking-widest border-b pb-2">Pendaftaran Baru</h5>
-                   <div className="flex items-center justify-between group">
-                      <span className="text-[10px] font-bold text-stone-700 dark:text-stone-200 uppercase">Notifikasi ke Admin</span>
-                      <button 
-                        onClick={() => setSettings(prev => ({...prev, notificationPrefs: {...prev.notificationPrefs, notifyAdminOnNew: !prev.notificationPrefs.notifyAdminOnNew}}))}
-                        className={`w-10 h-5 rounded-full transition-all relative ${settings.notificationPrefs.notifyAdminOnNew ? 'bg-red-600' : 'bg-stone-200 dark:bg-stone-800'}`}
-                      >
-                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${settings.notificationPrefs.notifyAdminOnNew ? 'left-5.5' : 'left-0.5'}`}></div>
-                      </button>
-                   </div>
-                   <div className="flex items-center justify-between group">
-                      <span className="text-[10px] font-bold text-stone-700 dark:text-stone-200 uppercase">Email Konfirmasi User</span>
-                      <button 
-                        onClick={() => setSettings(prev => ({...prev, notificationPrefs: {...prev.notificationPrefs, notifyUserOnNew: !prev.notificationPrefs.notifyUserOnNew}}))}
-                        className={`w-10 h-5 rounded-full transition-all relative ${settings.notificationPrefs.notifyUserOnNew ? 'bg-red-600' : 'bg-stone-200 dark:bg-stone-800'}`}
-                      >
-                        <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${settings.notificationPrefs.notifyUserOnNew ? 'left-5.5' : 'left-0.5'}`}></div>
-                      </button>
-                   </div>
-                </div>
-
-                <div className="space-y-4">
-                   <h5 className="text-[9px] font-black text-stone-400 dark:text-stone-500/40 uppercase tracking-widest border-b pb-2">Email Perubahan Status</h5>
-                   {["Terverifikasi", "Diproses", "Dibatalkan"].map(status => (
-                     <div key={status} className="flex items-center justify-between group">
-                        <span className="text-[10px] font-bold text-stone-700 dark:text-stone-200 uppercase">Status: {status}</span>
-                        <button 
-                          onClick={() => toggleStatusTrigger(status)}
-                          className={`w-10 h-5 rounded-full transition-all relative ${settings.notificationPrefs.statusTriggers[status] ? 'bg-red-600' : 'bg-stone-200 dark:bg-stone-800'}`}
-                        >
-                          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${settings.notificationPrefs.statusTriggers[status] ? 'left-5.5' : 'left-0.5'}`}></div>
-                        </button>
-                     </div>
-                   ))}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          {isDirty && (
-            <div className="flex gap-4 pt-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <button 
-                onClick={() => handleSaveSettings()} 
-                className="flex-1 py-5 bg-red-700 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-[0.3em] shadow-2xl hover:scale-[1.01] active:scale-95 transition-all"
-              >
-                {saveStatus === 'saving' ? 'Memproses...' : saveStatus === 'saved' ? 'Sistem Terupdate!' : 'Simpan Perubahan'}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
       {activeSubTab === 'table' && (
         <div className="bg-white dark:bg-stone-900 rounded-[2.5rem] border border-stone-200 dark:border-stone-800 shadow-xl overflow-hidden transition-colors">
            <div className="p-6 border-b border-stone-50 dark:border-stone-800 flex flex-col gap-6 bg-stone-50/50 dark:bg-stone-800/30">
-             
              <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                <div className="md:col-span-5 relative">
                   <span className="text-[8px] font-black uppercase tracking-widest text-stone-400 block mb-1.5 ml-1">Cari Nama / WhatsApp</span>
                   <input type="text" placeholder="Ketik nama peserta..." value={search} onChange={e => setSearch(e.target.value)} className="w-full px-5 py-3.5 bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700 rounded-xl text-xs font-bold outline-none transition-all dark:text-white focus:ring-2 focus:ring-red-500/20" />
                </div>
-               
                <div className="md:col-span-3">
                   <span className="text-[8px] font-black uppercase tracking-widest text-stone-400 block mb-1.5 ml-1">Dari Tanggal</span>
                   <input type="date" value={dateStart} onChange={e => setDateStart(e.target.value)} className="w-full px-5 py-3.5 bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700 rounded-xl text-xs font-bold outline-none transition-all dark:text-white focus:ring-2 focus:ring-red-500/20" />
                </div>
-
                <div className="md:col-span-3">
                   <span className="text-[8px] font-black uppercase tracking-widest text-stone-400 block mb-1.5 ml-1">Sampai Tanggal</span>
                   <input type="date" value={dateEnd} onChange={e => setDateEnd(e.target.value)} className="w-full px-5 py-3.5 bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700 rounded-xl text-xs font-bold outline-none transition-all dark:text-white focus:ring-2 focus:ring-red-500/20" />
                </div>
-
                <div className="md:col-span-1 flex items-end">
                   <button onClick={() => { setDateStart(''); setDateEnd(''); setSearch(''); }} className="w-full h-[46px] flex items-center justify-center bg-stone-100 dark:bg-stone-700 rounded-xl hover:bg-stone-200 transition-all">
                     <svg className="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
-               </div>
-             </div>
-
-             <div className="flex justify-between items-center pt-2">
-               <div className="text-[9px] font-black uppercase text-stone-400 tracking-widest">
-                 Menampilkan {filteredData.length} dari {data.length} pendaftar
-               </div>
-               <div className="flex gap-3">
-                 <button onClick={() => { const ws = XLSX.utils.json_to_sheet(filteredData); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, "Filtered_Participants"); XLSX.writeFile(wb, "Data_Peserta_Filtered.xlsx"); }} className="px-5 py-2.5 bg-stone-900 dark:bg-stone-800 text-white text-[9px] font-black uppercase tracking-widest rounded-xl hover:scale-105 transition-all">Export Filtered</button>
-                 <button onClick={onClearAll} className="px-5 py-2.5 bg-red-600/10 hover:bg-red-600 text-red-600 hover:text-white border border-red-600/20 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2">Reset Database</button>
                </div>
              </div>
            </div>
@@ -549,21 +347,44 @@ function doPost(e) {
              <table className="w-full text-left border-collapse">
                <thead>
                  <tr className="bg-stone-50/50 dark:bg-stone-950/50 border-b border-stone-100 dark:border-stone-800">
-                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">ID & Waktu Reg</th>
+                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">ID & Cloud</th>
                     <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Peserta</th>
                     <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Tujuan & Tgl Trip</th>
-                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Status Kontrol</th>
+                    <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-stone-400 dark:text-stone-500/40">Status</th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-stone-50 dark:divide-stone-800">
                  {filteredData.length === 0 ? (
-                   <tr><td colSpan={4} className="px-8 py-20 text-center text-[10px] font-black uppercase tracking-[0.4em] text-stone-300 dark:text-stone-500/20">Tidak ada data yang cocok</td></tr>
+                   <tr><td colSpan={4} className="px-8 py-20 text-center text-[10px] font-black uppercase tracking-[0.4em] text-stone-300 dark:text-stone-500/20">Tidak ada data</td></tr>
                  ) : filteredData.map(reg => (
                    <tr key={reg.id} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30 transition-colors">
                      <td className="px-8 py-6">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-black text-stone-400 dark:text-stone-500/40 uppercase tracking-tighter">#{reg.id.toString().slice(-6)}</span>
-                          <span className="text-[9px] font-bold text-stone-300 dark:text-stone-500/30 mt-1">{reg.timestamp}</span>
+                        <div className="flex items-center gap-4">
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black text-stone-400 dark:text-stone-500/40 uppercase tracking-tighter">#{reg.id.toString().slice(-6)}</span>
+                            <span className="text-[9px] font-bold text-stone-300 dark:text-stone-500/30 mt-1">{reg.timestamp}</span>
+                          </div>
+                          {reg.isSynced ? (
+                             <TooltipWrapper text="Sudah Sinkron">
+                               <div className="w-8 h-8 bg-green-500/10 text-green-500 rounded-lg flex items-center justify-center">
+                                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M5.5 13a3.5 3.5 0 01-.369-6.98 4 4 0 117.753-1.977A4.5 4.5 0 1113.5 13H11V11h2.5a2.5 2.5 0 100-5h-.027a1 1 0 01-.952-.683 2 2 0 10-3.725 0 1 1 0 01-.952.683H7.5a1.5 1.5 0 100 3H9v2H7.5a3.5 3.5 0 01-2-6.5V13z" /><path d="M10 13l-3-3h2V3h2v7h2l-3 3z" /></svg>
+                               </div>
+                             </TooltipWrapper>
+                          ) : (
+                             <TooltipWrapper text="Belum Sinkron - Klik untuk Sync">
+                               <button 
+                                 disabled={syncingId === reg.id || !settings.googleScriptUrl}
+                                 onClick={() => handleManualSync(reg.id)}
+                                 className="w-8 h-8 bg-red-500 text-white rounded-lg flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-lg shadow-red-500/20"
+                               >
+                                 {syncingId === reg.id ? (
+                                   <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                 ) : (
+                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                                 )}
+                               </button>
+                             </TooltipWrapper>
+                          )}
                         </div>
                      </td>
                      <td className="px-8 py-6">
@@ -579,19 +400,16 @@ function doPost(e) {
                         </div>
                      </td>
                      <td className="px-8 py-6">
-                        <div className="flex items-center gap-2">
-                           <span className={`w-2 h-2 rounded-full ${reg.status === 'Terverifikasi' ? 'bg-green-500' : reg.status === 'Dibatalkan' ? 'bg-red-500' : 'bg-amber-500'}`}></span>
-                           <select 
-                             value={reg.status} 
-                             onChange={(e) => onUpdateStatus?.(reg.id, e.target.value)}
-                             className="text-[9px] font-black uppercase bg-stone-100 dark:bg-stone-800 px-3 py-1.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-red-500 cursor-pointer dark:text-white"
-                           >
-                              <option value="Menunggu Verifikasi">Pending</option>
-                              <option value="Terverifikasi">Approve</option>
-                              <option value="Diproses">Process</option>
-                              <option value="Dibatalkan">Reject</option>
-                           </select>
-                        </div>
+                        <select 
+                          value={reg.status} 
+                          onChange={(e) => onUpdateStatus?.(reg.id, e.target.value)}
+                          className="text-[9px] font-black uppercase bg-stone-100 dark:bg-stone-800 px-3 py-1.5 rounded-lg border-none outline-none focus:ring-2 focus:ring-red-500 cursor-pointer dark:text-white"
+                        >
+                          <option value="Menunggu Verifikasi">Pending</option>
+                          <option value="Terverifikasi">Approve</option>
+                          <option value="Diproses">Process</option>
+                          <option value="Dibatalkan">Reject</option>
+                        </select>
                      </td>
                    </tr>
                  ))}
@@ -601,27 +419,65 @@ function doPost(e) {
         </div>
       )}
 
+      {activeSubTab === 'settings' && (
+        <div className="max-w-4xl space-y-8 animate-in slide-in-from-bottom-4 duration-500 pb-10">
+          <section className="bg-white dark:bg-stone-900 rounded-[2.5rem] border border-stone-100 dark:border-stone-800 shadow-xl overflow-hidden transition-colors">
+            <div className="p-8 border-b border-stone-50 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 flex items-center gap-4">
+              <div className="p-2 bg-stone-100 dark:bg-stone-800 rounded-xl">
+                <svg className="w-5 h-5 text-stone-600 dark:text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+              </div>
+              <div>
+                <h4 className="text-[10px] font-black text-stone-400 dark:text-stone-500 uppercase tracking-[0.2em]">Koneksi Cloud</h4>
+                <p className="text-[9px] font-bold text-stone-500 dark:text-stone-400 uppercase">Integrasi Google Spreadsheet</p>
+              </div>
+            </div>
+            <div className="p-8 space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <Input label="Web App URL" value={settings.googleScriptUrl} onChange={(e) => setSettings(p => ({ ...p, googleScriptUrl: e.target.value }))} placeholder="https://script.google.com/macros/s/.../exec" />
+                <Input label="Email Admin Notifikasi" type="email" value={settings.adminEmail} onChange={(e) => setSettings(p => ({ ...p, adminEmail: e.target.value }))} />
+              </div>
+              <div className="flex flex-wrap gap-4 pt-4">
+                <button onClick={handleTestConnection} disabled={testStatus === 'sending'} className={`px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-3 transition-all ${testStatus === 'success' ? 'bg-green-600 text-white' : testStatus === 'error' ? 'bg-red-600 text-white' : 'bg-red-700 text-white hover:scale-105 active:scale-95'}`}>{testStatus === 'sending' ? 'Mengirim...' : testStatus === 'success' ? 'Berhasil Terhubung' : testStatus === 'error' ? 'Koneksi Gagal' : 'Uji Koneksi Cloud'}</button>
+                <button onClick={() => setShowScriptModal(true)} className="px-6 py-4 bg-stone-900 dark:bg-stone-800 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">Dapatkan Script Cloud</button>
+              </div>
+            </div>
+          </section>
+
+          {isDirty && (
+            <div className="flex gap-4 pt-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+              <button onClick={() => handleSaveSettings()} className="flex-1 py-5 bg-red-700 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-[0.3em] shadow-2xl hover:scale-[1.01] active:scale-95 transition-all">{saveStatus === 'saving' ? 'Memproses...' : 'Simpan Konfigurasi'}</button>
+            </div>
+          )}
+        </div>
+      )}
+
       {showScriptModal && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-stone-950/80 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white dark:bg-stone-900 w-full max-w-4xl rounded-[3rem] shadow-2xl border border-stone-200 dark:border-stone-800 flex flex-col max-h-[90vh] transition-colors">
             <div className="p-10 border-b border-stone-50 dark:border-stone-800 flex justify-between items-center bg-stone-50/30 dark:bg-stone-950/30">
               <div>
-                <h3 className="text-2xl font-black uppercase tracking-tighter text-stone-800 dark:text-white">Backend V15 (Smart Sync)</h3>
-                <p className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase mt-1 tracking-widest">Update kode ini di Google Script agar status peserta sinkron otomatis dengan spreadsheet.</p>
+                <h3 className="text-2xl font-black uppercase tracking-tighter text-stone-800 dark:text-white">Cloud Backend V16</h3>
+                <p className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase mt-1 tracking-widest">Gunakan kode ini di Google Apps Script untuk menghubungkan form ke spreadsheet.</p>
               </div>
               <button onClick={() => setShowScriptModal(false)} className="w-12 h-12 flex items-center justify-center bg-stone-100 dark:bg-stone-800 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-2xl transition-all dark:text-white">✕</button>
             </div>
             <div className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <h4 className="text-xs font-black uppercase tracking-widest text-stone-500 dark:text-stone-500/40">Source Code (V15)</h4>
+                  <h4 className="text-xs font-black uppercase tracking-widest text-stone-500 dark:text-stone-500/40">Langkah-langkah:</h4>
                   <button onClick={() => { navigator.clipboard.writeText(generateAppsScriptCode()); alert("Kode Tersalin!"); }} className="px-4 py-2 bg-red-700 text-white text-[9px] font-black uppercase rounded-xl hover:scale-105 transition-all shadow-lg shadow-red-900/20">Salin Kode</button>
                 </div>
-                <div className="relative group">
-                  <pre className="p-8 bg-stone-900 dark:bg-stone-950 text-green-400 rounded-3xl text-[10px] font-mono overflow-x-auto leading-relaxed h-[400px] border border-stone-800 dark:border-stone-800">
-                    {generateAppsScriptCode()}
-                  </pre>
+                <div className="text-[11px] text-stone-500 dark:text-stone-400 font-medium space-y-2 leading-relaxed">
+                  <p>1. Buka <strong>Google Sheets</strong> Anda.</p>
+                  <p>2. Klik <strong>Extensions</strong> > <strong>Apps Script</strong>.</p>
+                  <p>3. Hapus semua kode bawaan dan tempel kode di bawah ini.</p>
+                  <p>4. Klik <strong>Deploy</strong> > <strong>New Deployment</strong>.</p>
+                  <p>5. Pilih type: <strong>Web App</strong>. Set "Who has access" ke <strong>Anyone</strong>.</p>
+                  <p>6. Salin URL Web App dan tempel di pengaturan dashboard ini.</p>
                 </div>
+                <pre className="p-8 bg-stone-900 dark:bg-stone-950 text-green-400 rounded-3xl text-[10px] font-mono overflow-x-auto leading-relaxed h-[400px] border border-stone-800 dark:border-stone-800">
+                  {generateAppsScriptCode()}
+                </pre>
               </div>
             </div>
             <div className="p-10 border-t border-stone-50 dark:border-stone-800"><button onClick={() => setShowScriptModal(false)} className="w-full py-5 bg-stone-900 dark:bg-stone-800 text-white font-black text-[11px] uppercase tracking-[0.4em] rounded-[2rem] shadow-xl">Tutup</button></div>

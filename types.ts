@@ -21,6 +21,7 @@ export interface Registration extends Omit<PersonalData, 'identityFile'> {
   id: number;
   timestamp: string;
   identityFile: string;
+  isSynced?: boolean; // New: track if sent to Google Sheets
 }
 
 export interface FormConfig {

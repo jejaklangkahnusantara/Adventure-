@@ -106,6 +106,21 @@ const App: React.FC = () => {
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setData(prev => ({ 
+          ...prev, 
+          identityFile: file, 
+          identityBase64: reader.result as string 
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const validate = (): boolean => {
     const newErrors: FormErrors = {};
     if (!data.fullName) newErrors.fullName = "Wajib diisi";
@@ -113,6 +128,7 @@ const App: React.FC = () => {
     if (!data.mountain) newErrors.mountain = "Pilih tujuan";
     if (!data.startDate) newErrors.startDate = "Wajib diisi";
     if (!data.tripType) newErrors.tripType = "Pilih tipe trip";
+    if (!data.identityBase64) newErrors.identityFile = "Upload KTP/Identitas";
     
     setErrors(newErrors);
     if (Object.keys(newErrors).length > 0) {
@@ -128,6 +144,8 @@ const App: React.FC = () => {
   const handleSubmit = async () => {
     setIsSending(true);
     setSubmitError(null);
+    let isSynced = false;
+
     try {
       const settingsStr = localStorage.getItem(SETTINGS_KEY);
       const settings: AdminSettings | null = settingsStr ? JSON.parse(settingsStr) : null;
@@ -137,33 +155,39 @@ const App: React.FC = () => {
         id: Date.now(),
         timestamp: new Date().toLocaleString('id-ID'),
         identityFile: data.identityBase64 || '',
-        status: 'Menunggu Verifikasi'
+        status: 'Menunggu Verifikasi',
+        isSynced: false
       };
 
       if (settings?.googleScriptUrl) {
-        // Notification preferences are now dynamically loaded from settings
-        const notificationPrefs = settings.notificationPrefs || {
-          notifyAdminOnNew: true,
-          notifyUserOnNew: true,
-          statusTriggers: {}
-        };
+        try {
+          const notificationPrefs = settings.notificationPrefs || {
+            notifyAdminOnNew: true,
+            notifyUserOnNew: true,
+            statusTriggers: {}
+          };
 
-        const payload = { 
-          action: 'NEW_REGISTRATION', 
-          registration: newReg, 
-          adminEmail: settings.adminEmail || DEFAULT_ADMIN_EMAIL,
-          notificationPrefs: notificationPrefs
-        };
+          const payload = { 
+            action: 'NEW_REGISTRATION', 
+            registration: newReg, 
+            adminEmail: settings.adminEmail || DEFAULT_ADMIN_EMAIL,
+            notificationPrefs: notificationPrefs
+          };
 
-        await fetch(settings.googleScriptUrl.trim(), {
-          method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify(payload)
-        });
+          await fetch(settings.googleScriptUrl.trim(), {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain' },
+            body: JSON.stringify(payload)
+          });
+          isSynced = true;
+        } catch (syncErr) {
+          console.error("Cloud Sync Failed, saving locally:", syncErr);
+        }
       }
 
-      const updatedRegs = keepHistory ? [...registrations, newReg] : [newReg];
+      const finalReg = { ...newReg, isSynced };
+      const updatedRegs = keepHistory ? [...registrations, finalReg] : [finalReg];
       setRegistrations(updatedRegs);
       localStorage.setItem(DB_KEY, JSON.stringify(updatedRegs));
 
@@ -171,7 +195,7 @@ const App: React.FC = () => {
       setData(initialData);
       setActiveTab('preview');
     } catch (err) {
-      setSubmitError('Terjadi gangguan jaringan.');
+      setSubmitError('Terjadi gangguan sistem.');
     } finally {
       setIsSending(false);
     }
@@ -196,7 +220,6 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex flex-col font-inter selection:bg-accent selection:text-white transition-colors duration-500 ${isDarkMode ? 'bg-midnight text-stone-100' : 'bg-stone-50 text-stone-900'}`}>
-      {/* Dynamic Floating Header */}
       <header className={`${isDarkMode ? 'bg-midnight/80 border-stone-800' : 'bg-white/80 border-stone-200'} backdrop-blur-xl sticky top-0 z-50 border-b no-print transition-all duration-500`}>
         <div className="max-w-7xl mx-auto px-4 md:px-6 h-16 md:h-20 flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -213,21 +236,15 @@ const App: React.FC = () => {
             {[
               { id: 'edit', label: 'Form' },
               { id: 'preview', label: 'Tiket' },
-              { id: 'admin', label: 'Admin', tooltip: 'Kelola pendaftaran ekspedisi' }
+              { id: 'admin', label: 'Admin' }
             ].map(tab => (
-              <div key={tab.id} className="relative group">
-                <button 
-                  onClick={() => setActiveTab(tab.id as any)} 
-                  className={`px-4 md:px-6 py-2 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${activeTab === tab.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-stone-500 hover:text-stone-400'}`}
-                >
-                  {tab.label}
-                </button>
-                {tab.tooltip && (
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-40 p-3 bg-stone-900 text-white text-[8px] font-black uppercase tracking-widest rounded-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 shadow-2xl z-50 text-center pointer-events-none">
-                    {tab.tooltip}
-                  </div>
-                )}
-              </div>
+              <button 
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)} 
+                className={`px-4 md:px-6 py-2 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${activeTab === tab.id ? 'bg-accent text-white shadow-lg shadow-accent/20' : 'text-stone-500 hover:text-stone-400'}`}
+              >
+                {tab.label}
+              </button>
             ))}
           </nav>
 
@@ -243,9 +260,8 @@ const App: React.FC = () => {
       <main className="flex-1 max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-16 w-full overflow-x-hidden">
         {activeTab === 'edit' && (
           <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-            {/* Mobile-Friendly Hero */}
             <div className="mb-10 md:mb-20 text-center md:text-left">
-              <span className="inline-block px-4 py-1.5 rounded-full bg-accent/10 text-accent text-[9px] font-black uppercase tracking-[0.3em] mb-4">Pendaftaran Terbuka</span>
+              <span className="inline-block px-4 py-1.5 rounded-full bg-accent/10 text-accent text-[9px] font-black uppercase tracking-[0.3em] mb-4">JEJAK LANGKAH ADVENTURE</span>
               <h2 className={`text-4xl md:text-7xl font-black leading-[0.9] tracking-tighter ${isDarkMode ? 'text-white' : 'text-stone-900'}`}>
                 MULAI <span className="text-accent">PENDAKIAN</span> ANDA.
               </h2>
@@ -255,7 +271,6 @@ const App: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 md:gap-12 items-start">
-              {/* Personal Data Card */}
               <div className={`lg:col-span-7 p-8 md:p-14 rounded-[2.5rem] md:rounded-[4rem] border shadow-2xl relative overflow-hidden group transition-all duration-500 ${isDarkMode ? 'bg-slate-900/40 border-stone-800' : 'bg-white border-stone-100 shadow-stone-200/50'}`}>
                 <div className="absolute top-0 right-0 w-64 h-64 bg-accent/5 rounded-full blur-[100px] pointer-events-none"></div>
                 
@@ -275,11 +290,37 @@ const App: React.FC = () => {
                 </div>
                 
                 <div className={`mt-10 pt-10 border-t ${isDarkMode ? 'border-stone-800/50' : 'border-stone-100'}`}>
+                  <div className="mb-8">
+                    <label className={`block text-[10px] font-black uppercase tracking-[0.15em] mb-3 px-1 ${errors.identityFile ? 'text-red-500' : 'text-stone-500'}`}>
+                      Identitas (KTP / Passport)
+                    </label>
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1">
+                        <label className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-[2rem] cursor-pointer transition-all ${isDarkMode ? 'bg-midnight/40 border-stone-800 hover:border-accent/40' : 'bg-stone-50 border-stone-200 hover:border-accent/40'}`}>
+                          {data.identityBase64 ? (
+                            <div className="relative w-full h-full p-2 group">
+                              <img src={data.identityBase64} alt="Identity Preview" className="w-full h-full object-contain rounded-[1.5rem]" />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-[1.5rem] flex items-center justify-center">
+                                <span className="text-[10px] text-white font-black uppercase tracking-widest">Ganti File</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                              <svg className="w-8 h-8 mb-4 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                              <p className="mb-2 text-sm text-stone-500"><span className="font-semibold">Klik untuk upload</span></p>
+                              <p className="text-xs text-stone-400">PNG, JPG up to 5MB</p>
+                            </div>
+                          )}
+                          <input type="file" className="hidden" accept="image/*" onChange={handleFileChange} />
+                        </label>
+                        {errors.identityFile && <p className="mt-2 text-[9px] font-black text-red-500 uppercase tracking-widest px-1">{errors.identityFile}</p>}
+                      </div>
+                    </div>
+                  </div>
                   <Input label="Alamat Domisili" isTextArea name="address" value={data.address} onChange={handleInputChange} placeholder="Alamat lengkap saat ini..." />
                 </div>
               </div>
 
-              {/* Trip Configuration Card */}
               <div className="lg:col-span-5 flex flex-col gap-8 md:gap-12">
                 <div className={`p-8 md:p-14 rounded-[2.5rem] md:rounded-[4rem] border shadow-2xl transition-all duration-500 ${isDarkMode ? 'bg-slate-900/40 border-stone-800' : 'bg-white border-stone-100 shadow-stone-200/50'}`}>
                   <div className="flex items-center gap-5 mb-12">
@@ -305,7 +346,6 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Submit Actions */}
                 <div className="space-y-6">
                   <label className="flex items-center gap-4 cursor-pointer group select-none px-2">
                     <input type="checkbox" checked={keepHistory} onChange={(e) => setKeepHistory(e.target.checked)} className="sr-only" />
@@ -366,20 +406,21 @@ const App: React.FC = () => {
                 </div>
                 
                 <div className="space-y-4">
-                  <input 
-                    type="text" 
+                  <Input 
+                    label="Username"
+                    name="adminUsername"
                     value={adminUserInput} 
                     onChange={(e) => setAdminUserInput(e.target.value)}
-                    placeholder="Username" 
-                    className={`w-full px-6 py-4 border-2 rounded-[1.5rem] text-center font-bold text-sm outline-none transition-all duration-300 ${isDarkMode ? 'bg-midnight border-stone-800 text-white focus:border-accent' : 'bg-stone-50 border-stone-200 focus:border-accent'}`}
+                    placeholder="Masukkan Username" 
                   />
-                  <input 
-                    type="password" 
+                  <Input 
+                    label="Password"
+                    type="password"
+                    name="adminPassword"
                     value={adminPassInput} 
                     onChange={(e) => setAdminPassInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()}
-                    placeholder="Password" 
-                    className={`w-full px-6 py-4 border-2 rounded-[1.5rem] text-center font-bold text-sm outline-none transition-all duration-300 ${isDarkMode ? 'bg-midnight border-stone-800 text-white focus:border-accent' : 'bg-stone-50 border-stone-200 focus:border-accent'}`}
+                    placeholder="Masukkan Password" 
                   />
                 </div>
 
@@ -400,6 +441,10 @@ const App: React.FC = () => {
                   setRegistrations(updated);
                   localStorage.setItem(DB_KEY, JSON.stringify(updated));
                 }}
+                onUpdateRegistrations={(updated) => {
+                  setRegistrations(updated);
+                  localStorage.setItem(DB_KEY, JSON.stringify(updated));
+                }}
                 onClearAll={() => { if(confirm('Hapus semua data?')) { setRegistrations([]); localStorage.removeItem(DB_KEY); }}}
               />
             )}
@@ -407,7 +452,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Simplified Mobile-Optimized Footer */}
       <footer className="p-12 text-center no-print border-t border-stone-200/10">
         <div className="flex flex-col gap-6 items-center">
           <div className="flex gap-6 items-center opacity-30">
